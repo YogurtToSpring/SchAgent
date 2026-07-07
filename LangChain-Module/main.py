@@ -16,6 +16,7 @@ SchAgent LangChain 核心模块
 import os
 import json
 import math
+import requests
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -121,14 +122,85 @@ class ToolCallHandler(BaseCallbackHandler):
 
 @tool
 def get_weather(city: str) -> str:
-    """查询指定城市的实时天气情况。参数 city 为城市名称，如 '北京'、'上海'。"""
-    weather_data = {
-        "北京": "晴天，温度 28°C，湿度 40%，风力 2 级",
-        "上海": "多云转小雨，温度 25°C，湿度 75%，风力 3 级",
-        "深圳": "雷阵雨，温度 30°C，湿度 85%，风力 4 级",
-        "成都": "阴天，温度 22°C，湿度 60%，风力 1 级",
-    }
-    return weather_data.get(city, f"{city}：晴天，温度 26°C，湿度 50%，风力 2 级")
+    """查询指定城市的实时天气情况。参数 city 为城市名称（中文或英文），如 '北京'、'上海'、'Tokyo'。
+    通过 uapis.cn 免费天气 API 获取真实数据。"""
+    API_URL = "https://uapis.cn/api/v1/misc/weather"
+
+    try:
+        resp = requests.get(
+            API_URL,
+            params={"city": city, "extended": True, "indices": True},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.Timeout:
+        return f"查询 {city} 天气超时，请稍后重试。"
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 天气服务暂时无法连接，请检查网络后重试。"
+    except requests.exceptions.HTTPError as e:
+        if resp.status_code == 404:
+            return f"未找到城市 '{city}' 的天气数据，请检查城市名称是否正确。"
+        return f"查询天气失败（HTTP {resp.status_code}），请稍后重试。"
+    except Exception as e:
+        return f"查询天气出错：{str(e)}"
+
+    # 检查是否有错误字段
+    if "code" in data and data["code"] != 200:
+        return f"查询天气失败：{data.get('message', '未知错误')}"
+
+    # ---- 构建友好的天气报告 ----
+    province = data.get("province", "")
+    district = data.get("district", "")
+    location = f"{province} {city}"
+    if district:
+        location += f" {district}"
+
+    lines = [f"📍 {location} 实时天气（{data.get('report_time', '')}）"]
+    lines.append(f"🌤 天气：{data.get('weather', '未知')}")
+    lines.append(f"🌡 温度：{data.get('temperature', '--')}°C"
+                 f"（体感 {data.get('feels_like', '--')}°C）")
+    lines.append(f"💧 湿度：{data.get('humidity', '--')}%")
+    lines.append(f"💨 风力：{data.get('wind_direction', '--')} {data.get('wind_power', '--')}")
+
+    # 空气质量
+    aqi = data.get("aqi")
+    if aqi is not None:
+        aqi_level = data.get("aqi_category", "")
+        primary = data.get("aqi_primary", "")
+        lines.append(f"🍃 空气质量：AQI {aqi}（{aqi_level}）"
+                     + (f"，主要污染物 {primary}" if primary else ""))
+
+    # 能见度 & 紫外线
+    vis = data.get("visibility")
+    if vis:
+        lines.append(f"👁 能见度：{vis} km")
+    uv = data.get("uv")
+    if uv:
+        uv_desc = "低" if uv < 3 else ("中等" if uv < 6 else ("高" if uv < 8 else "极高"))
+        lines.append(f"☀ 紫外线：{uv}（{uv_desc}）")
+
+    # 生活指数精选（穿衣、运动、雨伞）
+    indices = data.get("life_indices", {})
+    if indices:
+        clothing = indices.get("clothing", {})
+        if clothing:
+            lines.append(f"👔 穿衣建议：{clothing.get('advice', clothing.get('brief', ''))}")
+        umbrella = indices.get("umbrella", {})
+        if umbrella:
+            lines.append(f"☂ 雨伞：{umbrella.get('brief', umbrella.get('advice', ''))}")
+        exercise = indices.get("exercise", {})
+        if exercise:
+            lines.append(f"🏃 运动：{exercise.get('brief', exercise.get('advice', ''))}")
+
+    # 预警信息
+    alerts = data.get("alerts", [])
+    if alerts:
+        lines.append(f"\n⚠️ 气象预警（{len(alerts)}条）：")
+        for alert in alerts[:3]:  # 最多显示3条
+            lines.append(f"  • {alert.get('type', '')} {alert.get('level', '')}预警：{alert.get('title', '')}")
+
+    return "\n".join(lines)
 
 
 @tool
@@ -244,6 +316,38 @@ def recall_memory(username: str, key: Optional[str] = None) -> str:
     except Exception as e:
         return f"读取记忆出错：{str(e)}"
 
+@tool
+def markdown_to_html(markdown_text: str) -> str:
+    """将 Markdown 文本转换为 HTML。参数 markdown_text 为 Markdown 格式的字符串。"""
+    try:
+        import markdown
+        html = markdown.markdown(markdown_text)
+        return html
+    except ImportError:
+        return "Markdown 转 HTML 功能需要安装 'markdown' 库，请先运行 'pip install markdown'。"
+    except Exception as e:
+        return f"Markdown 转 HTML 出错：{str(e)}"
+
+@tool
+def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
+    """将 Markdown 文本转换为 PDF 文件。参数 markdown_text 为 Markdown 格式的字符串，output_file 为输出 PDF 文件名（可选，默认 'output.pdf'）。"""
+    try:
+        import markdown
+        from weasyprint import HTML
+
+        # 将 Markdown 转为 HTML
+        html_content = markdown.markdown(markdown_text)
+
+        # 将 HTML 转为 PDF
+        pdf_path = WORKSPACE_DIR / output_file
+        HTML(string=html_content).write_pdf(str(pdf_path))
+
+        return f"已将 Markdown 转换为 PDF: {pdf_path}"
+    except ImportError:
+        return "Markdown 转 PDF 功能需要安装 'markdown' 和 'weasyprint' 库，请先运行 'pip install markdown weasyprint'。"
+    except Exception as e:
+        return f"Markdown 转 PDF 出错：{str(e)}"
+
 
 # ============================================================
 # 创建 Agent（带 LangGraph MemorySaver 自动记忆）
@@ -258,6 +362,7 @@ tools = [
     get_weather, calculator, get_current_time,
     list_files, read_file, write_file,
     save_memory, recall_memory,
+    markdown_to_html, markdown_to_pdf
 ]
 
 llm = ChatDeepSeek(
