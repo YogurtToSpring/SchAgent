@@ -5,12 +5,10 @@ from passlib.hash import pbkdf2_sha256
 import os
 from dotenv import load_dotenv
 
-# 加载 .env 文件中的环境变量
 load_dotenv()
 
 app = FastAPI()
 
-# ================== 创建路由器，统一添加 /api 前缀 ==================
 router = APIRouter(prefix="/api")
 
 DATABASE = os.getenv("DATABASE_URL", "students.db")
@@ -22,6 +20,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Name TEXT NOT NULL,
             StuNum TEXT UNIQUE NOT NULL,
+            Cls TEXT,
             password_hash TEXT NOT NULL
         )
     """)
@@ -39,13 +38,13 @@ def verify_password(password: str, hash_value: str) -> bool:
 class StudentRegister(BaseModel):
     Name: str
     StuNum: str
+    Cls: str
     password: str
 
 class PasswordChange(BaseModel):
     old_password: str
     new_password: str
 
-# ================== 注册新学生（实际路径：/api/register） ==================
 @router.post("/register")
 def register(student_data: StudentRegister):
     conn = sqlite3.connect(DATABASE)
@@ -58,24 +57,44 @@ def register(student_data: StudentRegister):
     
     hashed = hash_password(student_data.password)
     conn.execute(
-        "INSERT INTO students (Name, StuNum, password_hash) VALUES (?, ?, ?)",
-        (student_data.Name, student_data.StuNum, hashed)
+        "INSERT INTO students (Name, StuNum, Cls, password_hash) VALUES (?, ?, ?, ?)",
+        (student_data.Name, student_data.StuNum, student_data.Cls, hashed)
     )
     conn.commit()
     conn.close()
     
     return {"message": f"Student {student_data.Name} registered successfully!"}
 
-# ================== 查看所有学生（实际路径：/api/students） ==================
 @router.get("/students")
 def list_students():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT id, Name, StuNum FROM students").fetchall()
+    rows = conn.execute("SELECT id, Name, Cls, StuNum FROM students").fetchall()
     conn.close()
     return {"students": [dict(row) for row in rows]}
 
-# ================== 修改学生密码（实际路径：/api/students/{student_id}/password） ==================
+@router.patch("/students/{student_id}/Cls")
+def change_cls(student_id: int, newcls: str):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    
+    student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+    if not student:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Student does not exist")
+    if student["Cls"] == newcls:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Class number had not been changed")
+    
+    conn.execute(
+        "UPDATE students SET Cls = ? WHERE id = ?",
+        (newcls, student_id)
+    )
+    conn.commit()
+    conn.close()
+
+    return {"message": "class changed successfully"}
+
 @router.put("/students/{student_id}/password")
 def change_password(student_id: int, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)
@@ -90,7 +109,6 @@ def change_password(student_id: int, password_data: PasswordChange):
         conn.close()
         raise HTTPException(status_code=400, detail="Wrong password")
     
-    # 检查新旧密码是否相同（你刚才问的校验）
     if password_data.new_password == password_data.old_password:
         conn.close()
         raise HTTPException(status_code=400, detail="New password should not be the same with the old one!")

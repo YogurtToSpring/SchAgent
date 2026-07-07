@@ -11,12 +11,12 @@ app = FastAPI()
 
 router = APIRouter(prefix="/api")
 
-DATABASE = os.getenv("DATABASE_URL", "admin.db")
+DATABASE = os.getenv("DATABASE_URL", "teacher.db")
 
 def init_db():
     conn = sqlite3.connect(DATABASE)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS admin (
+        CREATE TABLE IF NOT EXISTS teacher (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Name TEXT NOT NULL,
             Number TEXT UNIQUE NOT NULL,
@@ -34,7 +34,7 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hash_value: str) -> bool:
     return pbkdf2_sha256.verify(password, hash_value)
 
-class AdminRegister(BaseModel):
+class TeacherRegister(BaseModel):
     Name: str
     Number: str
     password: str
@@ -44,44 +44,44 @@ class PasswordChange(BaseModel):
     new_password: str
 
 @router.post("/register")
-def register(admin_data: AdminRegister):
+def register(teacher_data: TeacherRegister):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     
-    existing = conn.execute("SELECT id FROM admin WHERE Number = ?", (admin_data.Number,)).fetchone()
+    existing = conn.execute("SELECT id FROM teacher WHERE Number = ?", (teacher_data.Number,)).fetchone()
     if existing:
         conn.close()
         raise HTTPException(status_code=400, detail="Hey bro, you have just got your account")
     
-    hashed = hash_password(admin_data.password)
+    hashed = hash_password(teacher_data.password)
     conn.execute(
-        "INSERT INTO admin (Name, Number, password_hash) VALUES (?, ?, ?)",
-        (admin_data.Name, admin_data.Number, hashed)
+        "INSERT INTO teacher (Name, Number, password_hash) VALUES (?, ?, ?)",
+        (teacher_data.Name, teacher_data.Number, hashed)
     )
     conn.commit()
     conn.close()
     
-    return {"message": f"Admin {admin_data.Name} registered successfully!"}
+    return {"message": f"Teacher {teacher_data.Name} registered successfully!"}
 
-@router.get("/admin")
-def list_admin():
+@router.get("/teacher")
+def list_teacher():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT id, Name, Number FROM admin").fetchall()
+    rows = conn.execute("SELECT id, Name, Number FROM teacher").fetchall()
     conn.close()
-    return {"admin": [dict(row) for row in rows]}
+    return {"teacher": [dict(row) for row in rows]}
 
-@router.put("/admin/{admin_id}/password")
-def change_password(admin_id: int, password_data: PasswordChange):
+@router.put("/teacher/{teacher_id}/password")
+def change_password(teacher_id: int, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     
-    admin = conn.execute("SELECT * FROM admin WHERE id = ?", (admin_id,)).fetchone()
-    if not admin:
+    teacher = conn.execute("SELECT * FROM teacher WHERE id = ?", (teacher_id,)).fetchone()
+    if not teacher:
         conn.close()
-        raise HTTPException(status_code=404, detail="Admin does not exist")
+        raise HTTPException(status_code=404, detail="Teacher does not exist")
     
-    if not verify_password(password_data.old_password, admin["password_hash"]):
+    if not verify_password(password_data.old_password, teacher["password_hash"]):
         conn.close()
         raise HTTPException(status_code=400, detail="Wrong password")
     
@@ -91,8 +91,8 @@ def change_password(admin_id: int, password_data: PasswordChange):
     
     new_hashed = hash_password(password_data.new_password)
     conn.execute(
-        "UPDATE admin SET password_hash = ? WHERE id = ?",
-        (new_hashed, admin_id)
+        "UPDATE teacher SET password_hash = ? WHERE id = ?",
+        (new_hashed, teacher_id)
     )
     conn.commit()
     conn.close()
