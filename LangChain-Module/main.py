@@ -514,6 +514,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
 
                 # 回归 reasoning，等待 LLM 分析工具结果
                 phase = "reasoning"
+                has_pending_tools = False
                 yield {"event": "status", "data": {"phase": "reasoning", "message": "正在分析工具结果..."}}
 
             # ================================================================
