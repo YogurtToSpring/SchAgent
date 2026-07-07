@@ -1,9 +1,10 @@
 import axios from 'axios'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
 export async function sendMessage(payload) {
-  if (!apiBaseUrl) {
+  if (useMock) {
     return mockChatResponse(payload)
   }
 
@@ -11,6 +12,252 @@ export async function sendMessage(payload) {
     timeout: 30000
   })
   return data
+}
+
+export async function sendMessageStream(payload, handlers = {}) {
+  if (useMock) {
+    return streamMockResponse(payload, handlers)
+  }
+
+  try {
+    return await requestStream(payload, handlers)
+  } catch (error) {
+    const response = await sendMessage(payload)
+    const split = splitReasoning(response.answer || '')
+    response.answer = split.answer
+    response.reasoning = split.reasoning
+    handlers.onReasoning?.(split.reasoning)
+    handlers.onToken?.(split.answer)
+    handlers.onDone?.(response)
+    return response
+  }
+}
+
+async function requestStream(payload, handlers) {
+  const response = await fetch(`${apiBaseUrl}/api/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`流式接口返回 ${response.status}`)
+  }
+
+  const result = {
+    session_id: payload.session_id,
+    status: 'success',
+    answer: '',
+    reasoning: '',
+    steps: [],
+    tool_calls: [],
+    artifacts: []
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let currentEvent = ''
+  let dataLines = []
+
+  function flushEvent() {
+    if (!currentEvent || !dataLines.length) return
+    const eventName = currentEvent
+    const rawData = dataLines.join('\n')
+    currentEvent = ''
+    dataLines = []
+
+    let data
+    try {
+      data = JSON.parse(rawData)
+    } catch {
+      return
+    }
+    applyStreamEvent(eventName, data, result, handlers)
+  }
+
+  function readLine(line) {
+    if (!line.trim()) {
+      flushEvent()
+      return
+    }
+    if (line.startsWith('event:')) {
+      if (currentEvent && dataLines.length) flushEvent()
+      currentEvent = line.slice(6).trim()
+      return
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart())
+      flushEvent()
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split(/\r?\n/)
+    buffer = lines.pop() || ''
+    for (const line of lines) readLine(line)
+  }
+
+  buffer += decoder.decode()
+  if (buffer) readLine(buffer)
+  flushEvent()
+
+  const split = splitReasoning(result.answer)
+  if (split.reasoning) {
+    result.reasoning = result.reasoning
+      ? `${result.reasoning}\n${split.reasoning}`.trim()
+      : split.reasoning
+    result.answer = split.answer
+  }
+
+  handlers.onDone?.(result)
+  return result
+}
+
+function applyStreamEvent(eventName, data, result, handlers) {
+  if (eventName === 'status') {
+    const step = data.message || ''
+    if (step && !result.steps.includes(step)) {
+      result.steps.push(step)
+      handlers.onStep?.(step, data)
+    }
+    return
+  }
+
+  if (eventName === 'token') {
+    const content = data.content || ''
+    if (!content) return
+    if (data.phase === 'reasoning') {
+      result.reasoning += content
+      handlers.onReasoning?.(content, data)
+      return
+    }
+    result.answer += content
+    handlers.onToken?.(content, data)
+    return
+  }
+
+  if (eventName === 'tool_call') {
+    const call = {
+      tool: data.name || 'unknown',
+      label: toolLabel(data.name),
+      status: 'running',
+      input: data.args || {},
+      output: null
+    }
+    result.tool_calls.push(call)
+    handlers.onToolCall?.(call, data)
+    return
+  }
+
+  if (eventName === 'tool_result') {
+    const call = [...result.tool_calls].reverse().find(item => item.tool === data.name && item.output == null)
+    if (call) {
+      call.status = data.success === false ? 'failed' : 'success'
+      call.output = data.result || ''
+      handlers.onToolResult?.(call, data)
+    }
+    return
+  }
+
+  if (eventName === 'error') {
+    result.status = 'failed'
+    result.answer = data.message || '智能体执行失败。'
+    handlers.onError?.(result.answer, data)
+    return
+  }
+
+  if (eventName === 'done') {
+    result.session_id = data.session_id || result.session_id
+    if (data.error && result.status === 'success') {
+      result.status = 'failed'
+    }
+  }
+}
+
+function splitReasoning(text) {
+  const normalized = normalizeMarkdownText(text)
+  const thinkMatch = normalized.match(/<think>([\s\S]*?)<\/think>/i)
+  if (thinkMatch) {
+    return {
+      reasoning: thinkMatch[1].trim(),
+      answer: normalized.replace(thinkMatch[0], '').trim()
+    }
+  }
+
+  const answerMarker = normalized.match(/(?:^|\n)(?:正式回复|最终回答|答案)[:：]/)
+  const reasoningMarker = normalized.match(/(?:^|\n)(?:思考过程|思考|推理过程|Reasoning)[:：]/i)
+  if (reasoningMarker && answerMarker && reasoningMarker.index < answerMarker.index) {
+    return {
+      reasoning: normalized.slice(reasoningMarker.index, answerMarker.index).replace(/^(思考过程|思考|推理过程|Reasoning)[:：]/i, '').trim(),
+      answer: normalized.slice(answerMarker.index).replace(/^(正式回复|最终回答|答案)[:：]/, '').trim()
+    }
+  }
+
+  return {
+    reasoning: '',
+    answer: normalized
+  }
+}
+
+function normalizeMarkdownText(text) {
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .trim()
+}
+
+async function streamMockResponse(payload, handlers) {
+  const response = await mockChatResponse(payload)
+  const reasoning = '根据当前用户角色、课表数据和问题意图，判断需要查询课程与天气信息。'
+  handlers.onStep?.('正在分析问题')
+  for (const chunk of chunkText(reasoning, 8)) {
+    handlers.onReasoning?.(chunk, { phase: 'reasoning' })
+    await wait(20)
+  }
+  for (const step of response.steps || []) {
+    handlers.onStep?.(step)
+    await wait(40)
+  }
+  for (const call of response.tool_calls || []) {
+    handlers.onToolCall?.({ ...call, status: 'running', output: null })
+    await wait(80)
+    handlers.onToolResult?.(call)
+  }
+  for (const chunk of chunkText(response.answer || '', 8)) {
+    handlers.onToken?.(chunk, { phase: 'responding' })
+    await wait(20)
+  }
+  handlers.onDone?.({ ...response, reasoning })
+  return { ...response, reasoning }
+}
+
+function chunkText(text, size) {
+  const chunks = []
+  for (let index = 0; index < text.length; index += size) {
+    chunks.push(text.slice(index, index + size))
+  }
+  return chunks
+}
+
+function toolLabel(name = '') {
+  const labels = {
+    get_weather: '天气查询',
+    calculator: '数学计算',
+    get_current_time: '时间查询',
+    list_files: '文件列表',
+    read_file: '读取文件',
+    write_file: '写入文件',
+    save_memory: '保存记忆',
+    recall_memory: '读取记忆',
+    markdown_to_html: 'Markdown转HTML',
+    markdown_to_pdf: 'Markdown转PDF'
+  }
+  return labels[name] || name || '工具调用'
 }
 
 async function mockChatResponse({ session_id, message, user_context, platform_context }) {

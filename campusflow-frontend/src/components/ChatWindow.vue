@@ -17,7 +17,7 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import MessageBubble from './MessageBubble.vue'
 
 const props = defineProps({
@@ -34,9 +34,13 @@ const props = defineProps({
 defineEmits(['quick-reply'])
 
 const windowRef = ref(null)
+const lastMessageFingerprint = computed(() => {
+  const last = props.messages[props.messages.length - 1]
+  return `${props.messages.length}:${last?.content || ''}:${last?.reasoning || ''}:${last?.streamingStatus || ''}:${last?.isStreaming || false}`
+})
 
 watch(
-  () => [props.messages.length, props.loading],
+  () => [lastMessageFingerprint.value, props.loading],
   async () => {
     await nextTick()
     if (windowRef.value) {

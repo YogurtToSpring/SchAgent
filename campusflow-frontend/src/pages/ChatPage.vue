@@ -13,6 +13,7 @@
           v-for="item in quickPrompts"
           :key="item"
           class="quick-prompt"
+          :disabled="loading"
           type="button"
           @click="sendQuickPrompt(item)"
         >
@@ -50,7 +51,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import dayjs from 'dayjs'
-import { sendMessage } from '../api/chat'
+import { sendMessageStream } from '../api/chat'
 import ChatInput from '../components/ChatInput.vue'
 import ChatWindow from '../components/ChatWindow.vue'
 import SessionHeader from '../components/SessionHeader.vue'
@@ -127,32 +128,107 @@ async function handleSend(text) {
   lastUserMessage.value = content
 
   messages.value.push(createMessage('user', 'normal', content))
+  messages.value.push(createMessage('assistant', 'normal', '', {
+    reasoning: '',
+    artifacts: [],
+    isStreaming: true,
+    streamingStatus: '正在连接智能体...'
+  }))
+  const assistantIndex = messages.value.length - 1
   loading.value = true
-  steps.value = ['正在理解任务...']
+  steps.value = ['正在连接智能体...']
   toolCalls.value = []
 
   try {
-    const response = await sendMessage({
-      session_id: sessionId.value,
-      message: content,
-      user_context: buildUserContext(),
-      platform_context: buildPlatformContext()
-    })
-
-    sessionId.value = response.session_id
-    steps.value = response.steps || []
-    toolCalls.value = response.tool_calls || []
-
-    const type = response.status === 'need_clarification' ? 'clarification' : 'normal'
-    messages.value.push(
-      createMessage('assistant', type, response.answer, {
-        artifacts: response.artifacts || [],
-        missingFields: response.missing_fields || []
-      })
+    const finalResponse = await sendMessageStream(
+      {
+        session_id: sessionId.value,
+        message: content,
+        user_context: buildUserContext(),
+        platform_context: buildPlatformContext()
+      },
+      {
+        onStep: step => {
+          appendStep(step)
+          patchAssistantMessage(assistantIndex, {
+            streamingStatus: step || '正在生成回复...'
+          })
+        },
+        onReasoning: chunk => {
+          patchAssistantMessage(assistantIndex, current => ({
+            reasoning: `${current.reasoning || ''}${chunk}`,
+            streamingStatus: '正在生成正式回复...'
+          }))
+        },
+        onToken: chunk => {
+          patchAssistantMessage(assistantIndex, current => ({
+            content: `${current.content || ''}${chunk}`,
+            streamingStatus: ''
+          }))
+        },
+        onToolCall: call => {
+          toolCalls.value.push(call)
+        },
+        onToolResult: call => {
+          const index = toolCalls.value.findIndex(
+            item => item.tool === call.tool && item.output == null
+          )
+          if (index >= 0) {
+            toolCalls.value[index] = { ...toolCalls.value[index], ...call }
+          }
+        },
+        onError: message => {
+          patchAssistantMessage(assistantIndex, {
+            content: message,
+            isStreaming: false,
+            streamingStatus: ''
+          })
+        },
+        onDone: response => {
+          sessionId.value = response.session_id
+          patchAssistantMessage(assistantIndex, current => ({
+            type: response.status === 'need_clarification' ? 'clarification' : 'normal',
+            artifacts: response.artifacts || [],
+            missingFields: response.missing_fields || [],
+            reasoning: current.reasoning || response.reasoning || '',
+            content: response.answer || current.content || '',
+            isStreaming: false,
+            streamingStatus: ''
+          }))
+        }
+      }
     )
+
+    const finalMessage = messages.value[assistantIndex]
+    if (!String(finalMessage.content || '').trim()) {
+      if (finalResponse?.answer) {
+        patchAssistantMessage(assistantIndex, {
+          content: finalResponse.answer,
+          isStreaming: false,
+          streamingStatus: ''
+        })
+      } else if (String(finalMessage.reasoning || '').trim()) {
+        patchAssistantMessage(assistantIndex, {
+          content: '模型完成了思考，但没有返回正式回复。请换一种问法再试一次。',
+          isStreaming: false,
+          streamingStatus: ''
+        })
+      } else {
+        patchAssistantMessage(assistantIndex, {
+          content: '本次请求已经结束，但前端没有收到模型回复内容。请刷新页面后重试，或检查后端流式接口是否返回 token 事件。',
+          isStreaming: false,
+          streamingStatus: ''
+        })
+      }
+    }
   } catch (err) {
     error.value = friendlyError(err)
     steps.value = ['请求后端失败，等待用户重试']
+    patchAssistantMessage(assistantIndex, {
+      content: error.value,
+      isStreaming: false,
+      streamingStatus: ''
+    })
   } finally {
     loading.value = false
   }
@@ -192,6 +268,25 @@ function createMessage(role, type, content, extra = {}) {
     createdAt: dayjs().format('HH:mm'),
     ...extra
   }
+}
+
+function patchAssistantMessage(index, patch) {
+  const current = messages.value[index]
+  if (!current) return
+  const nextPatch = typeof patch === 'function' ? patch(current) : patch
+  messages.value[index] = {
+    ...current,
+    ...nextPatch
+  }
+}
+
+function appendStep(step) {
+  if (!step || steps.value.includes(step)) return
+  if (steps.value.length === 1 && steps.value[0] === '正在连接智能体...') {
+    steps.value = [step]
+    return
+  }
+  steps.value.push(step)
 }
 
 function friendlyError(err) {

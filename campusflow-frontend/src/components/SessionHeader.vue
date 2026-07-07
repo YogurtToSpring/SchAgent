@@ -10,7 +10,7 @@
 
     <div class="header-actions">
       <span class="session-pill">
-        {{ sessionId ? `会话 ${shortSessionId}` : 'Mock 会话' }}
+        {{ sessionId ? `会话 ${shortSessionId}` : '未建立会话' }}
       </span>
       <span class="status-pill" :class="{ running: loading }">
         {{ loading ? '执行中' : '就绪' }}

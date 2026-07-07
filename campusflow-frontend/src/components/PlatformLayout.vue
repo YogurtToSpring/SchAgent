@@ -39,7 +39,7 @@
         <button class="ghost-action" type="button" @click="$emit('logout')">退出登录</button>
       </header>
 
-      <div class="platform-content">
+      <div class="platform-content" :class="{ 'assistant-content': activeView === 'assistant' }">
         <slot></slot>
       </div>
     </section>
