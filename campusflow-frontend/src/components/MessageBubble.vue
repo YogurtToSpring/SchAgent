@@ -11,7 +11,26 @@
         <span>需要补充信息</span>
       </div>
 
-      <ResultRenderer :content="message.content" :artifacts="message.artifacts" />
+      <details v-if="message.role === 'assistant' && message.reasoning" class="reasoning-box">
+        <summary>
+          <span>思考过程</span>
+          <small>点击展开 / 收起</small>
+        </summary>
+        <ResultRenderer :content="message.reasoning" />
+      </details>
+
+      <div v-if="message.isStreaming && !message.content" class="message-loading">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span>{{ message.streamingStatus || '正在生成回复...' }}</span>
+      </div>
+
+      <ResultRenderer
+        v-if="message.content || message.artifacts?.length"
+        :content="message.content"
+        :artifacts="message.artifacts"
+      />
 
       <div v-if="message.type === 'clarification'" class="clarification-actions">
         <button type="button" @click="$emit('quick-reply', '今天上午我有没有课？')">今天</button>

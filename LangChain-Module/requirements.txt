@@ -1,0 +1,9 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.2
+requests==2.32.3
+langchain==0.3.27
+langchain-core==0.3.72
+langchain-deepseek==0.1.4
+langgraph==0.6.2
+markdown==3.7

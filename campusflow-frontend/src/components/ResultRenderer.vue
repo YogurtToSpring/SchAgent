@@ -44,10 +44,19 @@ const props = defineProps({
 
 marked.setOptions({
   breaks: true,
-  gfm: true
+  gfm: true,
+  async: false
 })
 
 const safeHtml = computed(() => {
-  return DOMPurify.sanitize(marked.parse(props.content || ''))
+  return DOMPurify.sanitize(marked.parse(normalizeMarkdownText(props.content)))
 })
+
+function normalizeMarkdownText(text) {
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '  ')
+    .trim()
+}
 </script>
