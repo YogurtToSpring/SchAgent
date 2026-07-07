@@ -8,15 +8,20 @@ SchAgent FastAPI 接口层
 
 接口列表：
     GET  /health              → 健康检查
-    POST /chat                → 发送消息，获取 Agent 回复
+    POST /chat                → 发送消息，获取 Agent 回复（同步）
+    POST /chat/stream         → 发送消息，SSE 流式获取 Agent 状态
     GET  /history/{session_id} → 获取会话对话历史
     DELETE /history/{session_id} → 清除会话历史
     GET  /memory/{username}    → 获取用户长期记忆
     PUT  /memory/{username}    → 更新用户长期记忆
     DELETE /memory/{username}  → 删除用户长期记忆
+    GET  /files/{file_name}    → 下载工作区文件（Agent 生成的 PDF 等）
+    GET  /files                → 列出工作区可下载文件
 """
 
+import json
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 import uvicorn
@@ -24,11 +29,13 @@ import uvicorn
 # 从同目录的 main 模块导入核心函数
 from main import (
     chat as agent_chat,
+    chat_stream,
     get_history,
     clear_history,
     get_user_memory,
     update_user_memory,
     delete_user_memory,
+    WORKSPACE_DIR,
 )
 
 app = FastAPI(
@@ -84,10 +91,11 @@ async def health():
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """发送消息给 Agent，获取回复。
+    """发送消息给 Agent，获取回复（同步模式）。
     
     同一 session_id 的多次请求会共享对话历史（LangGraph 自动管理）。
     不同 session_id 之间完全隔离。
+    如需流式输出（思考过程、工具调用等），请使用 /chat/stream。
     """
     try:
         reply = agent_chat(
@@ -98,6 +106,39 @@ async def chat(request: ChatRequest):
         return ChatResponse(session_id=request.session_id, response=reply)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Agent 处理出错：{str(e)}")
+
+
+@app.post("/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """流式对话端点（Server-Sent Events）。
+
+    将 Agent 的全生命周期状态（思考 token、工具调用/结果、回复 token）
+    以 SSE 格式实时推送给客户端。
+
+    事件类型：status | token | tool_call | tool_result | error | done
+
+    前端可使用 fetch + ReadableStream 消费（POST 不支持 EventSource）。
+    """
+    async def event_generator():
+        async for event_data in chat_stream(
+            session_id=request.session_id,
+            message=request.message,
+            username=request.username,
+        ):
+            event_type = event_data["event"]
+            data_json = json.dumps(event_data["data"], ensure_ascii=False)
+            yield f"event: {event_type}\ndata: {data_json}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
 @app.get("/history/{session_id}", response_model=HistoryResponse)
@@ -135,6 +176,49 @@ async def delete_memory(username: str, key: Optional[str] = Query(None)):
     """删除用户的长期记忆。不指定 key 则清空全部。"""
     result = delete_user_memory(username, key)
     return MemoryResponse(**result)
+
+
+# ============================================================
+# 文件服务端点（供 Backend 下载 Agent 生成的文件）
+# ============================================================
+
+@app.get("/files")
+async def list_workspace_files():
+    """列出工作区中所有可下载的文件"""
+    items = []
+    try:
+        for f in WORKSPACE_DIR.iterdir():
+            if f.is_file():
+                items.append({
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "url": f"/files/{f.name}",
+                })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"列出文件出错：{str(e)}")
+    return {"files": items}
+
+
+@app.get("/files/{file_name}")
+async def download_file(file_name: str):
+    """下载工作区中 Agent 生成的文件（如 PDF）。
+
+    由 markdown_to_pdf 等工具生成的文件存储在工作区目录，
+    通过此端点可以下载到前端。
+    """
+    file_path = (WORKSPACE_DIR / file_name).resolve()
+    # 安全检查：防止路径遍历攻击
+    if not str(file_path).startswith(str(WORKSPACE_DIR.resolve())):
+        raise HTTPException(status_code=403, detail="禁止访问工作区以外的文件")
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"文件 '{file_name}' 不存在")
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail=f"'{file_name}' 不是文件")
+    return FileResponse(
+        path=str(file_path),
+        filename=file_name,
+        media_type="application/octet-stream",
+    )
 
 
 # ============================================================

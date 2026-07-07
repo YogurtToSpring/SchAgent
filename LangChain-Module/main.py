@@ -50,6 +50,8 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - list_files: 列出工作区目录下的内容
 - save_memory: 保存用户的长期记忆（课表、偏好、笔记等）
 - recall_memory: 读取用户的长期记忆
+- markdown_to_html: 将 Markdown 文本转换为 HTML
+- markdown_to_pdf: 将 Markdown 文本转换为 PDF 文件
 
 使用原则：
 1. 维护对话上下文，记住用户在当前会话中说过的信息
@@ -407,6 +409,126 @@ def chat(session_id: str, message: str, username: Optional[str] = None) -> str:
         },
     )
     return result["messages"][-1].content
+
+
+async def chat_stream(session_id: str, message: str, username: Optional[str] = None):
+    """流式对话，逐事件产出 Agent 状态。
+
+    使用 agent.astream_events() 获取 LLM token 流、工具调用/结果等事件，
+    通过状态机区分 reasoning → calling_tool → responding → done 四个阶段，
+    以 dict 流的形式产出，供 API 层转为 SSE 推送给前端。
+
+    Yields:
+        {"event": "status", "data": {"phase": "...", "message": "..."}}
+        {"event": "token", "data": {"content": "...", "phase": "reasoning"|"responding"}}
+        {"event": "tool_call", "data": {"name": "...", "args": {...}}}
+        {"event": "tool_result", "data": {"name": "...", "result": "...", "success": true}}
+        {"event": "error", "data": {"message": "...", "phase": "..."}}
+        {"event": "done", "data": {"session_id": "..."}}
+    """
+    import traceback
+
+    if username:
+        message = f"[当前用户: {username}] {message}"
+
+    # ---- 内部状态机 ----
+    phase: str = "reasoning"          # reasoning | calling_tool | responding | done
+    has_pending_tools: bool = False   # 上一轮 LLM 是否产出了工具调用
+
+    try:
+        yield {"event": "status", "data": {"phase": "reasoning", "message": "正在思考..."}}
+
+        async for event in agent.astream_events(
+            {"messages": [HumanMessage(content=message)]},
+            config={"configurable": {"thread_id": session_id}},
+            version="v2",
+        ):
+            kind = event["event"]
+
+            # ================================================================
+            # LLM 流式输出 token
+            # ================================================================
+            if kind == "on_chat_model_stream":
+                chunk = event["data"]["chunk"]
+
+                # --- 提取 reasoning_content（DeepSeek 推理过程） ---
+                reasoning = None
+                if hasattr(chunk, "additional_kwargs") and chunk.additional_kwargs:
+                    reasoning = chunk.additional_kwargs.get("reasoning_content", "")
+                # 兼容某些实现把 reasoning 放在 content 之前
+                if not reasoning:
+                    reasoning = getattr(chunk, "reasoning_content", None)
+
+                if reasoning and isinstance(reasoning, str) and reasoning.strip():
+                    yield {"event": "token", "data": {"content": reasoning, "phase": "reasoning"}}
+
+                # --- 提取正文 content ---
+                chunk_content = getattr(chunk, "content", "")
+                if isinstance(chunk_content, list):
+                    chunk_content = "".join(
+                        b.get("text", "") if isinstance(b, dict) else str(b)
+                        for b in chunk_content
+                    )
+
+                if chunk_content and isinstance(chunk_content, str) and chunk_content.strip():
+                    if phase == "reasoning" and not has_pending_tools:
+                        phase = "responding"
+                        yield {"event": "status", "data": {"phase": "responding", "message": "正在生成回复..."}}
+                    yield {"event": "token", "data": {"content": chunk_content, "phase": phase}}
+
+                # --- 检测工具调用（chunk 中有 tool_call_chunks 且无正文 → 工具调用中） ---
+                tcc = getattr(chunk, "tool_call_chunks", None) or []
+                if tcc and not chunk_content and not reasoning:
+                    if phase != "calling_tool":
+                        phase = "calling_tool"
+
+            # ================================================================
+            # 工具开始执行
+            # ================================================================
+            elif kind == "on_tool_start":
+                phase = "calling_tool"
+                has_pending_tools = True
+                tool_name = event.get("name", "unknown")
+                raw_input = event["data"].get("input", {})
+                # 清洗参数（截断过长值）
+                if isinstance(raw_input, dict):
+                    clean_args = {}
+                    for k, v in raw_input.items():
+                        s = str(v)
+                        clean_args[k] = s[:200] + "..." if len(s) > 200 else s
+                else:
+                    clean_args = str(raw_input)[:200]
+
+                yield {"event": "status", "data": {"phase": "calling_tool", "message": f"正在调用工具: {tool_name}"}}
+                yield {"event": "tool_call", "data": {"name": tool_name, "args": clean_args}}
+
+            # ================================================================
+            # 工具执行完成
+            # ================================================================
+            elif kind == "on_tool_end":
+                tool_name = event.get("name", "unknown")
+                raw_output = str(event["data"].get("output", ""))
+                # 截断过长结果
+                result_text = raw_output[:500] + "..." if len(raw_output) > 500 else raw_output
+                yield {"event": "tool_result", "data": {"name": tool_name, "result": result_text, "success": True}}
+
+                # 回归 reasoning，等待 LLM 分析工具结果
+                phase = "reasoning"
+                yield {"event": "status", "data": {"phase": "reasoning", "message": "正在分析工具结果..."}}
+
+            # ================================================================
+            # LLM 单次调用结束（可忽略，仅用于调试）
+            # ================================================================
+            elif kind == "on_chat_model_end":
+                pass
+
+        # ---- 流正常结束 ----
+        yield {"event": "status", "data": {"phase": "done", "message": "完成"}}
+        yield {"event": "done", "data": {"session_id": session_id}}
+
+    except Exception as e:
+        yield {"event": "error", "data": {"message": str(e), "phase": phase}}
+        yield {"event": "done", "data": {"session_id": session_id, "error": str(e)}}
 
 
 def get_history(session_id: str) -> List[Dict[str, str]]:
