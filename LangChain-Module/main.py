@@ -354,18 +354,18 @@ def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
     """将 Markdown 文本转换为 PDF 文件。参数 markdown_text 为 Markdown 格式的字符串，output_file 为输出 PDF 文件名（可选，默认 'output.pdf'）。"""
     try:
         import markdown
-        from weasyprint import HTML
+        import pdfkit
 
         # 将 Markdown 转为 HTML
         html_content = markdown.markdown(markdown_text)
 
         # 将 HTML 转为 PDF
         pdf_path = WORKSPACE_DIR / output_file
-        HTML(string=html_content).write_pdf(str(pdf_path))
+        pdfkit.from_string(html_content, str(pdf_path))
 
         return f"已将 Markdown 转换为 PDF: {pdf_path}"
     except ImportError:
-        return "Markdown 转 PDF 功能需要安装 'markdown' 和 'weasyprint' 库，请先运行 'pip install markdown weasyprint'。"
+        return "Markdown 转 PDF 功能需要安装 'markdown' 和 'pdfkit' 库，请先运行 'pip install markdown pdfkit'。此外还需安装 wkhtmltopdf (https://wkhtmltopdf.org/downloads.html)。"
     except Exception as e:
         return f"Markdown 转 PDF 出错：{str(e)}"
 
