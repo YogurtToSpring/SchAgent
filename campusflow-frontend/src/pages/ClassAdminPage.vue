@@ -84,6 +84,7 @@
       </div>
 
       <form class="course-form" @submit.prevent="addCourse">
+        <input v-model="newCourse.courseId" placeholder="课程编号，例如 123456" />
         <select v-model="newCourse.classId">
           <option v-for="item in classes" :key="item.id" :value="item.id">{{ item.name }}</option>
         </select>
@@ -98,7 +99,15 @@
         </select>
         <input v-model="newCourse.startTime" placeholder="开始时间 08:00" />
         <input v-model="newCourse.endTime" placeholder="结束时间 09:40" />
-        <input v-model="newCourse.location" placeholder="地点" />
+        <select v-if="rooms.length" v-model="newCourse.roomId">
+          <option v-for="room in rooms" :key="room.roomFull" :value="room.roomFull">
+            {{ room.label }}
+          </option>
+        </select>
+        <input v-else v-model="newCourse.roomId" placeholder="教室，例如 3-3-301" />
+        <input v-model="newCourse.weekStart" placeholder="起始周 1" />
+        <input v-model="newCourse.weekEnd" placeholder="结束周 16" />
+        <input v-model="newCourse.semester" placeholder="学期 2025-2026-2" />
         <button class="primary-action compact" type="submit">添加课程</button>
       </form>
     </section>
@@ -106,7 +115,7 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 
 const props = defineProps({
   classes: {
@@ -116,6 +125,10 @@ const props = defineProps({
   students: {
     type: Array,
     required: true
+  },
+  rooms: {
+    type: Array,
+    default: () => []
   },
   currentUser: {
     type: Object,
@@ -132,14 +145,38 @@ const newClass = reactive({
 })
 
 const newCourse = reactive({
+  courseId: nextCourseId(),
   classId: props.classes[0]?.id || '',
   courseName: '',
   teacher: '',
   weekday: '周一',
   startTime: '08:00',
   endTime: '09:40',
-  location: ''
+  roomId: props.rooms[0]?.roomFull || '3-3-301',
+  weekStart: '1',
+  weekEnd: '16',
+  semester: '2025-2026-2'
 })
+
+watch(
+  () => props.classes,
+  value => {
+    if (!newCourse.classId && value[0]?.id) {
+      newCourse.classId = value[0].id
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.rooms,
+  value => {
+    if (value[0]?.roomFull && (!newCourse.roomId || newCourse.roomId === '3-3-301')) {
+      newCourse.roomId = value[0].roomFull
+    }
+  },
+  { immediate: true }
+)
 
 function addClass() {
   if (!newClass.name.trim()) return
@@ -158,17 +195,24 @@ function assignStudent(studentId, classId) {
 }
 
 function addCourse() {
-  if (!newCourse.classId || !newCourse.courseName.trim()) return
+  if (!newCourse.classId || !newCourse.courseId.trim() || !newCourse.courseName.trim()) return
   emit('add-course', {
     ...newCourse,
+    courseId: newCourse.courseId.trim(),
     courseName: newCourse.courseName.trim(),
     teacher: newCourse.teacher.trim() || props.currentUser.name,
-    location: newCourse.location.trim() || '待定',
-    weeks: '1-16周'
+    roomId: newCourse.roomId.trim() || '3-3-301',
+    location: newCourse.roomId.trim() || '3-3-301',
+    weekStart: Number(newCourse.weekStart) || 1,
+    weekEnd: Number(newCourse.weekEnd) || 16,
+    semester: newCourse.semester.trim() || '2025-2026-2',
+    weeks: `${Number(newCourse.weekStart) || 1}-${Number(newCourse.weekEnd) || 16}周`
   })
+  newCourse.courseId = nextCourseId()
   newCourse.courseName = ''
   newCourse.teacher = ''
-  newCourse.location = ''
+  newCourse.weekStart = '1'
+  newCourse.weekEnd = '16'
 }
 
 function countStudents(classId) {
@@ -177,5 +221,9 @@ function countStudents(classId) {
 
 function className(classId) {
   return props.classes.find(item => item.id === classId)?.name || '未分配'
+}
+
+function nextCourseId() {
+  return String(Date.now()).slice(-9)
 }
 </script>

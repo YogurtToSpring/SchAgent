@@ -17,9 +17,9 @@
         <p>已接入课表数据</p>
       </article>
       <article class="metric-card weather-card">
-        <span>今日天气</span>
+        <span>{{ weather.city || '今日天气' }}</span>
         <strong>{{ weather.weather }}</strong>
-        <p>{{ weather.temperature }} · {{ weather.wind }}</p>
+        <p>{{ weather.temperature }} · {{ weather.wind }} · {{ weather.updatedAt }}</p>
       </article>
     </div>
 
