@@ -3,33 +3,18 @@
     <section class="login-hero">
       <div class="brand-mark large">CF</div>
       <h1>CampusFlow 校园智能服务平台</h1>
-      <p>模拟学校信息平台，把班级、课表、天气和智能体助手放在同一个业务系统里。</p>
+      <p>统一管理课程、待办、成绩、图书馆、论坛、文件和智能助手。</p>
     </section>
 
     <section class="login-panel" aria-label="登录面板">
       <div>
         <h2>{{ mode === 'login' ? '登录平台' : '注册账号' }}</h2>
-        <p>{{ mode === 'login' ? '请选择身份并输入账号密码。后端不可用时仍可使用演示账号。' : '填写基础身份信息，注册成功后会自动进入平台。' }}</p>
+        <p>{{ mode === 'login' ? '请选择身份并输入账号密码。' : '填写基础身份信息，注册成功后会自动进入平台。' }}</p>
       </div>
 
       <div class="auth-tabs" role="tablist" aria-label="登录注册切换">
         <button type="button" :class="{ active: mode === 'login' }" @click="switchMode('login')">登录</button>
         <button type="button" :class="{ active: mode === 'register' }" @click="switchMode('register')">注册</button>
-      </div>
-
-      <div v-if="mode === 'login'" class="demo-accounts">
-        <button type="button" @click="fillAccount('teacher')">
-          <span>教师管理员</span>
-          <small>123 / 123456</small>
-        </button>
-        <button type="button" @click="fillAccount('student')">
-          <span>普通学生</span>
-          <small>2024001 / 123456</small>
-        </button>
-        <button type="button" @click="fillAccount('admin')">
-          <span>系统管理员</span>
-          <small>123456 / 123456</small>
-        </button>
       </div>
 
       <form class="login-form" @submit.prevent="submit">
@@ -75,7 +60,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { demoUsers } from '../data/platformData'
+import { fallbackUsers } from '../data/platformData'
 import { loginPlatformUser, registerPlatformUser } from '../api/platform'
 
 const emit = defineEmits(['login'])
@@ -99,18 +84,6 @@ function switchMode(nextMode) {
   } else {
     password.value = '123456'
   }
-}
-
-function fillAccount(nextRole) {
-  role.value = nextRole
-  const accounts = {
-    teacher: '123',
-    student: '2024001',
-    admin: '123456'
-  }
-  username.value = accounts[nextRole]
-  password.value = '123456'
-  error.value = ''
 }
 
 async function submit() {
@@ -151,7 +124,7 @@ async function submit() {
       return
     }
 
-    const fallbackUser = demoUsers.find(
+    const fallbackUser = fallbackUsers.find(
       item => item.username === username.value.trim() && item.password === password.value
     )
 

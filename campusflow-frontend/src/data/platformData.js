@@ -1,7 +1,7 @@
-export const demoUsers = [
+export const fallbackUsers = [
   {
     id: 'u-teacher-001',
-    username: 'teacher',
+    username: '123',
     password: '123456',
     role: 'teacher',
     name: '林老师',
@@ -16,6 +16,14 @@ export const demoUsers = [
     name: '赵同学',
     studentNo: '2024001',
     classId: 'class-se-1'
+  },
+  {
+    id: 'u-admin-001',
+    username: '123456',
+    password: '123456',
+    role: 'admin',
+    name: '系统管理员',
+    classIds: ['class-se-1', 'class-ai-1']
   }
 ]
 

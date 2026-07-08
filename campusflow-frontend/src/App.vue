@@ -22,10 +22,28 @@
       :students="students"
       :courses="courses"
       :weather="weather"
+      :todos="todos"
+      :notifications="notifications"
+      :reservations="reservations"
+      :grades="grades"
+      @navigate="activeView = $event"
+    />
+
+    <ProfilePage
+      v-show="activeView === 'profile'"
+      :current-user="currentUser"
+      :classes="classes"
+    />
+
+    <TodoPage
+      v-show="activeView === 'todos'"
+      :todos="todos"
+      @add-todo="addTodo"
+      @toggle-todo="toggleTodo"
     />
 
     <ClassAdminPage
-      v-if="currentUser.role === 'teacher'"
+      v-if="currentUser.role === 'teacher' || currentUser.role === 'admin'"
       v-show="activeView === 'classes'"
       :classes="classes"
       :students="students"
@@ -43,6 +61,41 @@
       :courses="courses"
     />
 
+    <GradesPage
+      v-show="activeView === 'grades'"
+      :current-user="currentUser"
+      :grades="grades"
+    />
+
+    <LibraryPage
+      v-show="activeView === 'library'"
+      :seats="librarySeats"
+      :reservations="reservations"
+      @reserve-seat="reserveSeat"
+      @add-todo="addTodo"
+    />
+
+    <ForumPage
+      v-show="activeView === 'forum'"
+      :current-user="currentUser"
+      :posts="forumPosts"
+      @add-post="addPost"
+      @review-post="reviewPost"
+    />
+
+    <NotificationsPage
+      v-show="activeView === 'notifications'"
+      :notifications="notifications"
+      @mark-all-read="markAllNotificationsRead"
+      @open-notice="openNotice"
+    />
+
+    <FileCenterPage
+      v-show="activeView === 'files'"
+      :files="files"
+      @refresh-files="refreshFiles"
+    />
+
     <ChatPage
       v-show="activeView === 'assistant'"
       :current-user="currentUser"
@@ -50,6 +103,17 @@
       :students="students"
       :courses="courses"
       :weather="weather"
+    />
+
+    <AdminCenterPage
+      v-if="currentUser.role === 'admin'"
+      v-show="activeView === 'admin'"
+      :classes="classes"
+      :students="students"
+      :courses="courses"
+      :posts="forumPosts"
+      :logs="systemLogs"
+      @navigate="activeView = $event"
     />
 
     <div v-if="platformError" class="platform-alert" role="alert">
@@ -61,11 +125,19 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import AdminCenterPage from './pages/AdminCenterPage.vue'
 import ChatPage from './pages/ChatPage.vue'
 import ClassAdminPage from './pages/ClassAdminPage.vue'
 import DashboardPage from './pages/DashboardPage.vue'
+import FileCenterPage from './pages/FileCenterPage.vue'
+import ForumPage from './pages/ForumPage.vue'
+import GradesPage from './pages/GradesPage.vue'
+import LibraryPage from './pages/LibraryPage.vue'
 import LoginPage from './pages/LoginPage.vue'
+import NotificationsPage from './pages/NotificationsPage.vue'
+import ProfilePage from './pages/ProfilePage.vue'
 import SchedulePage from './pages/SchedulePage.vue'
+import TodoPage from './pages/TodoPage.vue'
 import PlatformLayout from './components/PlatformLayout.vue'
 import {
   cloneData,
@@ -75,12 +147,23 @@ import {
   weatherSnapshot
 } from './data/platformData'
 import {
+  initialFiles,
+  initialForumPosts,
+  initialGrades,
+  initialLibrarySeats,
+  initialNotifications,
+  initialReservations,
+  initialSystemLogs,
+  initialTodos
+} from './data/campusModules'
+import {
   createCourse,
   enrollStudent,
   loadRealtimeWeather,
   loadPlatformSnapshot,
   updateStudentClass
 } from './api/platform'
+import { listAgentFiles } from './api/files'
 
 const SESSION_STORAGE_KEY = 'campusflow.currentUser'
 
@@ -91,6 +174,14 @@ const students = ref(cloneData(initialStudents))
 const courses = ref(cloneData(initialCourses))
 const rooms = ref([])
 const weather = ref(cloneData(weatherSnapshot))
+const todos = ref(cloneData(initialTodos))
+const grades = ref(cloneData(initialGrades))
+const librarySeats = ref(cloneData(initialLibrarySeats))
+const reservations = ref(cloneData(initialReservations))
+const forumPosts = ref(cloneData(initialForumPosts))
+const notifications = ref(cloneData(initialNotifications))
+const files = ref(cloneData(initialFiles))
+const systemLogs = ref(cloneData(initialSystemLogs))
 const platformError = ref('')
 const restoringSession = ref(true)
 
@@ -106,10 +197,11 @@ async function handleLogin(user) {
     currentUser.value = hydrateUser(user, snapshot)
   } catch (error) {
     currentUser.value = user
-    platformError.value = '后端平台数据暂时不可用，当前使用前端演示数据。'
+    platformError.value = '后端平台数据暂时不可用，当前使用本地缓存数据。'
   }
   saveLoginSession(currentUser.value)
   refreshWeather()
+  refreshFiles()
   activeView.value = 'dashboard'
 }
 
@@ -118,6 +210,64 @@ function logout() {
   activeView.value = 'dashboard'
   platformError.value = ''
   localStorage.removeItem(SESSION_STORAGE_KEY)
+}
+
+function addTodo(payload) {
+  todos.value.unshift({
+    id: `todo-${Date.now()}`,
+    status: 'pending',
+    ...payload
+  })
+}
+
+function toggleTodo(todoId) {
+  const todo = todos.value.find(item => item.id === todoId)
+  if (!todo) return
+  todo.status = todo.status === 'done' ? 'pending' : 'done'
+}
+
+function reserveSeat(payload) {
+  reservations.value.unshift({
+    id: `res-${Date.now()}`,
+    ...payload
+  })
+  const seatNo = payload.target.split(' ').pop()
+  const seat = librarySeats.value.find(item => item.seatNo === seatNo)
+  if (seat) seat.status = 'reserved'
+}
+
+function addPost(payload) {
+  forumPosts.value.unshift({
+    id: `post-${Date.now()}`,
+    ...payload
+  })
+  notifications.value.unshift({
+    id: `notice-${Date.now()}`,
+    type: '论坛互动',
+    title: payload.status === 'review' ? '帖子已提交审核' : '帖子已发布',
+    time: '刚刚',
+    status: 'unread',
+    link: 'forum'
+  })
+}
+
+function reviewPost(postId) {
+  const post = forumPosts.value.find(item => item.id === postId)
+  if (!post) return
+  post.status = 'published'
+}
+
+function markAllNotificationsRead() {
+  notifications.value = notifications.value.map(item => ({
+    ...item,
+    status: 'read'
+  }))
+}
+
+function openNotice(notice) {
+  const target = notifications.value.find(item => item.id === notice.id)
+  if (target) target.status = 'read'
+  if (notice.link) activeView.value = notice.link
 }
 
 function addClass(payload) {
@@ -198,6 +348,13 @@ function applyPlatformSnapshot(snapshot) {
 }
 
 function hydrateUser(user, snapshot) {
+  if (user.role === 'admin') {
+    return {
+      ...user,
+      classIds: snapshot.classes.map(item => item.id)
+    }
+  }
+
   if (user.role === 'teacher') {
     const teacher = user.authRole === 'admin'
       ? null
@@ -252,6 +409,21 @@ async function refreshWeather() {
   }
 }
 
+async function refreshFiles() {
+  try {
+    const agentFiles = await listAgentFiles()
+    const merged = [...cloneData(initialFiles)]
+    for (const file of agentFiles) {
+      if (!merged.some(item => item.name === file.name)) {
+        merged.unshift(file)
+      }
+    }
+    files.value = merged
+  } catch (error) {
+    files.value = cloneData(initialFiles)
+  }
+}
+
 async function restoreLoginSession() {
   const savedUser = readLoginSession()
   if (!savedUser) {
@@ -266,9 +438,10 @@ async function restoreLoginSession() {
     saveLoginSession(currentUser.value)
   } catch (error) {
     currentUser.value = savedUser
-    platformError.value = '已恢复本地登录状态，但后端平台数据暂时不可用。'
+    platformError.value = '已恢复本地登录状态，平台数据使用本地缓存。'
   } finally {
     refreshWeather()
+    refreshFiles()
     activeView.value = 'dashboard'
     restoringSession.value = false
   }
