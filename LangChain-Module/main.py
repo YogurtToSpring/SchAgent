@@ -67,7 +67,16 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 2. 对于需要长期记住的信息（如课表），主动使用 save_memory 保存
 3. 对于课表、课程、班级、学生、教室等校园信息查询，必须使用对应的 query_ 系列工具从学校数据库获取准确数据，不要凭猜测回答
 4. 如果不需要工具就直接回答
-5. 回答简洁、友好"""
+5. 回答简洁、友好
+
+角色感知原则：
+- 每条消息开头会附带 [用户信息] 块，包含当前用户的姓名、身份、班级等信息
+- 不允许查询其他人的课程、课表、成绩等隐私信息
+- 不随意调用查询数据库的tools，仅在用户明确查询**自己**的课表、课程、班级、学生、教室等信息时才使用
+- 学生（student）：可查询个人课表、课程信息、同班同学，不允许查询其他班级或其他学生的隐私信息
+- 教师（teacher）：可查询授课安排、班级学生名单、教室信息，不允许查询其他教师或学生的隐私信息
+- 管理员（admin）：可查询全部数据，帮助进行系统管理和数据统计分析
+- 使用 query_ 系列工具时，应优先利用用户信息中的班级、学号等限定查询范围，提高准确性"""
 
 
 # ============================================================
@@ -628,19 +637,63 @@ agent = create_agent(
 # 公开接口（供 API 层 / Backend 调用）
 # ============================================================
 
-def chat(session_id: str, message: str, username: Optional[str] = None) -> str:
+# ---- 角色中英文映射 ----
+ROLE_LABELS: Dict[str, str] = {
+    "student": "学生",
+    "teacher": "教师",
+    "admin": "管理员",
+}
+
+
+def _build_user_context_message(
+    message: str,
+    username: Optional[str] = None,
+    role: Optional[str] = None,
+    user_id: Optional[str] = None,
+    class_id: Optional[str] = None,
+    class_ids: Optional[List[str]] = None,
+) -> str:
+    """构建带用户上下文的完整消息，将 UserContext 信息以 [用户信息] 前缀注入。
+
+    Backend 传来的 UserContext 字段（均为可选），统一拼装为一行中文标签，
+    帮助 LLM 感知当前对话对象的身份、班级等，从而提供差异化服务。
+    """
+    parts: List[str] = []
+    if username:
+        parts.append(f"姓名：{username}")
+    if role:
+        label = ROLE_LABELS.get(role, role)
+        parts.append(f"身份：{label}")
+    if user_id:
+        parts.append(f"ID：{user_id}")
+    if class_id:
+        parts.append(f"班级：{class_id}")
+    if class_ids:
+        parts.append(f"班级列表：{', '.join(class_ids)}")
+
+    if not parts:
+        return message
+
+    prefix = "[用户信息] " + " | ".join(parts)
+    return f"{prefix}\n{message}"
+
+
+def chat(session_id: str, message: str, username: Optional[str] = None, role: Optional[str] = None, user_id: Optional[str] = None, class_id: Optional[str] = None, class_ids: Optional[List[str]] = None) -> str:
     """执行一次对话，返回 Agent 回复。
     
     Args:
         session_id: 会话 ID。同一 ID 共享对话历史，不同 ID 完全隔离。
         message: 用户消息
         username: 可选，用户名（Agent 可据此使用长期记忆工具）
+        role: 可选，用户身份（student / teacher / admin）
+        user_id: 可选，用户唯一标识
+        class_id: 可选，单个班级 ID
+        class_ids: 可选，多个班级 ID 列表
     
     Returns:
         Agent 的回复文本
     """
-    if username:
-        message = f"[当前用户: {username}] {message}"
+    message = _build_user_context_message(message, username, role, user_id, class_id, class_ids)
 
     result = agent.invoke(
         {"messages": [HumanMessage(content=message)]},
@@ -652,12 +705,21 @@ def chat(session_id: str, message: str, username: Optional[str] = None) -> str:
     return result["messages"][-1].content
 
 
-async def chat_stream(session_id: str, message: str, username: Optional[str] = None):
+async def chat_stream(session_id: str, message: str, username: Optional[str] = None, role: Optional[str] = None, user_id: Optional[str] = None, class_id: Optional[str] = None, class_ids: Optional[List[str]] = None):
     """流式对话，逐事件产出 Agent 状态。
 
     使用 agent.astream_events() 获取 LLM token 流、工具调用/结果等事件，
     通过状态机区分 reasoning → calling_tool → responding → done 四个阶段，
     以 dict 流的形式产出，供 API 层转为 SSE 推送给前端。
+
+    Args:
+        session_id: 会话 ID
+        message: 用户消息
+        username: 可选，用户名
+        role: 可选，用户身份（student / teacher / admin）
+        user_id: 可选，用户唯一标识
+        class_id: 可选，单个班级 ID
+        class_ids: 可选，多个班级 ID 列表
 
     Yields:
         {"event": "status", "data": {"phase": "...", "message": "..."}}
@@ -669,8 +731,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
     """
     import traceback
 
-    if username:
-        message = f"[当前用户: {username}] {message}"
+    message = _build_user_context_message(message, username, role, user_id, class_id, class_ids)
 
     # ---- 内部状态机 ----
     phase: str = "reasoning"          # reasoning | calling_tool | responding | done
