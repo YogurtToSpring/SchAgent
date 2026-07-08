@@ -23,7 +23,7 @@ import json
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 import uvicorn
 
 # 从同目录的 main 模块导入核心函数
@@ -53,6 +53,10 @@ class ChatRequest(BaseModel):
     session_id: str = Field(..., description="会话 ID，同一 ID 共享对话历史", examples=["user123-session1"])
     message: str = Field(..., description="用户消息", examples=["今天天气怎么样？"])
     username: Optional[str] = Field(None, description="可选，用户名（用于长期记忆）", examples=["张三"])
+    role: Optional[str] = Field(None, description="可选，用户身份（student / teacher / admin）", examples=["student"])
+    user_id: Optional[str] = Field(None, description="可选，用户唯一标识", examples=["2024001"])
+    class_id: Optional[str] = Field(None, description="可选，单个班级 ID", examples=["class-001"])
+    class_ids: Optional[List[str]] = Field(None, description="可选，多个班级 ID 列表", examples=[["class-001", "class-002"]])
 
 
 class ChatResponse(BaseModel):
@@ -102,6 +106,10 @@ async def chat(request: ChatRequest):
             session_id=request.session_id,
             message=request.message,
             username=request.username,
+            role=request.role,
+            user_id=request.user_id,
+            class_id=request.class_id,
+            class_ids=request.class_ids,
         )
         return ChatResponse(session_id=request.session_id, response=reply)
     except Exception as e:
@@ -124,6 +132,10 @@ async def chat_stream_endpoint(request: ChatRequest):
             session_id=request.session_id,
             message=request.message,
             username=request.username,
+            role=request.role,
+            user_id=request.user_id,
+            class_id=request.class_id,
+            class_ids=request.class_ids,
         ):
             event_type = event_data["event"]
             data_json = json.dumps(event_data["data"], ensure_ascii=False)
