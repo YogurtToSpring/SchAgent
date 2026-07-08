@@ -357,11 +357,70 @@ def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
         import pdfkit
 
         # 将 Markdown 转为 HTML
-        html_content = markdown.markdown(markdown_text)
+        body_content = markdown.markdown(markdown_text, extensions=['tables', 'fenced_code', 'codehilite'])
+
+        # 包装为完整 HTML 文档，指定 UTF-8 编码和中文字体
+        full_html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {{
+            font-family: "Microsoft YaHei", "SimHei", "SimSun", "Noto Sans SC", "WenQuanYi Micro Hei", sans-serif;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #333;
+            padding: 20px;
+        }}
+        h1, h2, h3, h4, h5, h6 {{
+            font-family: "Microsoft YaHei", "SimHei", sans-serif;
+            color: #1a1a1a;
+        }}
+        code {{
+            font-family: "Consolas", "Courier New", monospace;
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }}
+        pre {{
+            background-color: #f4f4f4;
+            padding: 12px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }}
+        pre code {{
+            background: none;
+            padding: 0;
+        }}
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }}
+        th, td {{
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }}
+        th {{
+            background-color: #f0f0f0;
+        }}
+        blockquote {{
+            border-left: 4px solid #ddd;
+            padding-left: 16px;
+            color: #666;
+            margin: 10px 0;
+        }}
+    </style>
+</head>
+<body>
+{body_content}
+</body>
+</html>"""
 
         # 将 HTML 转为 PDF
         pdf_path = WORKSPACE_DIR / output_file
-        pdfkit.from_string(html_content, str(pdf_path))
+        pdfkit.from_string(full_html, str(pdf_path))
 
         return f"已将 Markdown 转换为 PDF: {pdf_path}"
     except ImportError:
