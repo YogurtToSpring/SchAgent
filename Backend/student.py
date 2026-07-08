@@ -41,6 +41,10 @@ class StudentRegister(BaseModel):
     Cls: str
     password: str
 
+class StudentLogin(BaseModel):
+    StuNum: str
+    password: str
+
 class PasswordChange(BaseModel):
     old_password: str
     new_password: str
@@ -64,6 +68,19 @@ def register(student_data: StudentRegister):
     conn.close()
     
     return {"message": f"Student {student_data.Name} registered successfully!"}
+
+@router.post("/students/login")
+def login(student_data: StudentLogin):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM students WHERE StuNum = ?", (student_data.StuNum,)
+    ).fetchone()
+    if not verify_password(student_data.password, row["password_hash"]):
+        conn.close()
+        raise HTTPException(status_code=404, detail="Permmission Denied. Authentification Failure")
+    conn.close()
+    return {"message": f"Student {row["Name"]} login successfully!"}
 
 @router.get("/students")
 def list_students():

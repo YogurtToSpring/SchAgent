@@ -39,6 +39,10 @@ class TeacherRegister(BaseModel):
     Number: str
     password: str
 
+class TeacherLogin(BaseModel):
+    Number: str
+    password: str
+
 class PasswordChange(BaseModel):
     old_password: str
     new_password: str
@@ -62,6 +66,19 @@ def register(teacher_data: TeacherRegister):
     conn.close()
     
     return {"message": f"Teacher {teacher_data.Name} registered successfully!"}
+
+@router.post("/teacher/login")
+def login(teacher_data: TeacherLogin):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM teacher WHERE Number = ?", (teacher_data.Number,)
+    ).fetchone()
+    if not verify_password(teacher_data.password, row["password_hash"]):
+        conn.close()
+        raise HTTPException(status_code=404, detail="Permmission Denied. Authentification Failure")
+    conn.close()
+    return {"message": f"Teacher {row["Name"]} login successfully!"}
 
 @router.get("/teacher")
 def list_teacher():

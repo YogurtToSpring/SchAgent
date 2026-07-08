@@ -39,6 +39,10 @@ class AdminRegister(BaseModel):
     Number: str
     password: str
 
+class AdminLogin(BaseModel):
+    Number: str
+    password: str
+
 class PasswordChange(BaseModel):
     old_password: str
     new_password: str
@@ -62,6 +66,20 @@ def register(admin_data: AdminRegister):
     conn.close()
     
     return {"message": f"Admin {admin_data.Name} registered successfully!"}
+
+@router.post("/admin/login")
+def login(admin_data: AdminLogin):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM admin WHERE Number = ?", (admin_data.Number,)
+    ).fetchone()
+    if not verify_password(admin_data.password, row["password_hash"]):
+        conn.close()
+        raise HTTPException(status_code=404, detail="Permmission Denied. Authentification Failure")
+    conn.close()
+    return {"message": f"Admin {row["Name"]} login successfully!"}
+
 
 @router.get("/admin")
 def list_admin():
