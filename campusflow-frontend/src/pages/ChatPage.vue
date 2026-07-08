@@ -1,60 +1,126 @@
 <template>
   <section class="assistant-page">
-    <SessionHeader
-      :session-id="sessionId"
-      :loading="loading"
-      @new-session="startNewSession"
-    />
-
-    <section class="workspace">
-      <aside class="quick-panel" aria-label="快捷问题">
-        <div class="panel-title">快捷问题</div>
-        <button
-          v-for="item in quickPrompts"
-          :key="item"
-          class="quick-prompt"
-          :disabled="loading"
-          type="button"
-          @click="sendQuickPrompt(item)"
-        >
-          {{ item }}
+    <aside class="assistant-sessions" aria-label="助手会话">
+      <header class="assistant-session-header">
+        <div>
+          <span class="assistant-eyebrow">智能助手</span>
+          <strong>会话</strong>
+        </div>
+        <button class="assistant-new-button" type="button" :disabled="loading" @click="startNewSession">
+          <Plus :size="16" />
+          新建
         </button>
-      </aside>
+      </header>
 
-      <section class="chat-panel" aria-label="对话区">
+      <div class="assistant-session-list">
+        <article
+          v-for="session in sessions"
+          :key="session.localId"
+          class="assistant-session-item"
+          :class="{ active: session.localId === activeLocalSessionId }"
+          @click="switchSession(session.localId)"
+        >
+          <input
+            class="session-title-input"
+            :value="session.title"
+            placeholder="新会话"
+            :disabled="loading && session.localId !== activeLocalSessionId"
+            @click.stop
+            @focus="switchSession(session.localId)"
+            @input="renameSession(session.localId, $event.target.value)"
+            @keydown.enter.prevent="$event.target.blur()"
+          />
+          <small>{{ sessionMeta(session) }}</small>
+        </article>
+      </div>
+
+      <footer class="assistant-session-foot">
+        <span>快捷问题会根据身份、课表和天气随机生成，执行过程默认收起。</span>
+      </footer>
+    </aside>
+
+    <section class="assistant-conversation" aria-label="智能助手对话">
+      <header class="assistant-conversation-header">
+        <div class="conversation-title-group">
+          <span class="assistant-eyebrow">CampusFlow Assistant</span>
+          <input
+            class="conversation-title-input"
+            :value="currentSessionTitle"
+            placeholder="新会话"
+            @input="renameSession(activeLocalSessionId, $event.target.value)"
+            @keydown.enter.prevent="$event.target.blur()"
+          />
+          <p>{{ currentConversationSubtitle }}</p>
+        </div>
+
+        <div class="conversation-actions">
+          <span class="status-pill" :class="currentStatus">{{ statusText }}</span>
+        </div>
+      </header>
+
+      <div class="assistant-chat-body">
         <ChatWindow
           :messages="messages"
           :loading="loading"
           @quick-reply="sendQuickPrompt"
         />
 
-        <div v-if="error" class="network-alert" role="alert">
-          <div>
-            <strong>连接失败</strong>
-            <span>{{ error }}</span>
+        <div v-if="showStarterPrompts" class="starter-prompts" aria-label="快捷问题">
+          <div class="starter-prompts-head">
+            <span>可以这样问</span>
           </div>
-          <button type="button" @click="retryLastMessage">重试</button>
+
+          <div class="prompt-chip-list">
+            <button
+              v-for="item in quickPrompts"
+              :key="item"
+              class="prompt-chip"
+              type="button"
+              @click="sendQuickPrompt(item)"
+            >
+              {{ item }}
+            </button>
+          </div>
         </div>
+      </div>
 
-        <ChatInput :disabled="loading" @send="handleSend" />
-      </section>
+      <details
+        v-if="steps.length || toolCalls.length || error"
+        class="assistant-process"
+        :open="traceOpen"
+        @toggle="traceOpen = $event.target.open"
+      >
+        <summary>
+          <span>执行过程</span>
+          <small>{{ traceSummary }}</small>
+        </summary>
+        <ToolTrace
+          :steps="steps"
+          :tool-calls="toolCalls"
+          :status="currentStatus"
+        />
+      </details>
 
-      <ToolTrace
-        :steps="steps"
-        :tool-calls="toolCalls"
-        :status="currentStatus"
-      />
+      <div v-if="error" class="network-alert" role="alert">
+        <div>
+          <strong>连接失败</strong>
+          <span>{{ error }}</span>
+        </div>
+        <button type="button" @click="retryLastMessage">重试</button>
+      </div>
+
+      <ChatInput :disabled="loading" @send="handleSend" />
     </section>
   </section>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import dayjs from 'dayjs'
+import { Plus } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/chat'
 import ChatInput from '../components/ChatInput.vue'
 import ChatWindow from '../components/ChatWindow.vue'
-import SessionHeader from '../components/SessionHeader.vue'
 import ToolTrace from '../components/ToolTrace.vue'
 
 const props = defineProps({
@@ -80,39 +146,42 @@ const props = defineProps({
   }
 })
 
-const quickPrompts = computed(() => {
-  if (props.currentUser.role === 'teacher') {
-    return [
-      '帮我看软件工程1班明天上午有哪些课',
-      '检查软件工程1班周三有没有课表冲突',
-      '给软件工程1班生成明天课程提醒',
-      '今天下雨的话，提醒学生上课出行注意事项'
-    ]
-  }
+const DEFAULT_SESSION_TITLE = '新会话'
+const MAX_SESSIONS = 18
 
-  return [
-    '明天上午我有没有课？',
-    '明天上课如果下雨，适合骑车吗？',
-    '帮我安排今天的学习计划',
-    '帮我看看有没有课'
-  ]
-})
-
+const sessions = ref([])
+const activeLocalSessionId = ref('')
 const sessionId = ref(null)
-const messages = ref([
-  {
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    type: 'normal',
-    content: `你好，${props.currentUser.name}。我是 CampusFlow 平台助手，会基于你的${props.currentUser.role === 'teacher' ? '教师权限' : '学生课表'}回答问题。`,
-    createdAt: dayjs().format('HH:mm')
-  }
-])
+const messages = ref([])
 const steps = ref([])
 const toolCalls = ref([])
 const loading = ref(false)
 const error = ref('')
 const lastUserMessage = ref('')
+const traceOpen = ref(false)
+
+const quickPrompts = ref([])
+
+const sessionStorageIdentity = computed(() => {
+  const user = props.currentUser
+  return [
+    user.role,
+    user.id || user.studentNo || user.teacherNo || user.username || user.name || 'anonymous'
+  ].join(':')
+})
+
+const storageKey = computed(() => `campusflow.assistant.sessions.${sessionStorageIdentity.value}`)
+
+const activeSession = computed(() => {
+  return sessions.value.find(item => item.localId === activeLocalSessionId.value) || null
+})
+
+const currentSessionTitle = computed(() => activeSession.value?.title || DEFAULT_SESSION_TITLE)
+
+const hasUserMessages = computed(() => messages.value.some(item => item.role === 'user'))
+
+const showStarterPrompts = computed(() => !loading.value && !hasUserMessages.value)
+
 const currentStatus = computed(() => {
   if (loading.value) return 'running'
   if (error.value) return 'error'
@@ -120,12 +189,64 @@ const currentStatus = computed(() => {
   return last?.type === 'clarification' ? 'need_clarification' : 'idle'
 })
 
+const statusText = computed(() => {
+  const map = {
+    idle: '就绪',
+    running: '执行中',
+    error: '异常',
+    need_clarification: '待补充'
+  }
+  return map[currentStatus.value] || '就绪'
+})
+
+const traceSummary = computed(() => {
+  if (error.value) return '出现异常，可重试'
+  if (loading.value) return '正在理解任务并调用工具'
+  if (toolCalls.value.length) return `已调用 ${toolCalls.value.length} 个工具`
+  if (steps.value.length) return `记录 ${steps.value.length} 个步骤`
+  return '暂无执行记录'
+})
+
+const currentConversationSubtitle = computed(() => {
+  const parts = [roleLabel(props.currentUser.role), props.currentUser.name]
+  if (sessionId.value) {
+    parts.push(`智能体会话 ${shortId(sessionId.value)}`)
+  } else {
+    parts.push('本地新会话')
+  }
+  return parts.join(' · ')
+})
+
+watch(
+  () => sessionStorageIdentity.value,
+  () => {
+    initializeSessions()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [
+    props.currentUser.role,
+    props.classes.length,
+    props.courses.length,
+    props.weather.weather,
+    props.weather.temperature
+  ],
+  () => {
+    if (showStarterPrompts.value) {
+      refreshQuickPrompts()
+    }
+  }
+)
+
 async function handleSend(text) {
   const content = text.trim()
   if (!content || loading.value) return
 
   error.value = ''
   lastUserMessage.value = content
+  ensureActiveSessionTitle(content)
 
   messages.value.push(createMessage('user', 'normal', content))
   messages.value.push(createMessage('assistant', 'normal', '', {
@@ -138,6 +259,7 @@ async function handleSend(text) {
   loading.value = true
   steps.value = ['正在连接智能体...']
   toolCalls.value = []
+  saveCurrentSession()
 
   try {
     const finalResponse = await sendMessageStream(
@@ -231,6 +353,7 @@ async function handleSend(text) {
     })
   } finally {
     loading.value = false
+    saveCurrentSession()
   }
 }
 
@@ -245,18 +368,240 @@ function retryLastMessage() {
 }
 
 function startNewSession() {
-  sessionId.value = null
-  steps.value = []
-  toolCalls.value = []
-  error.value = ''
-  lastUserMessage.value = ''
-  messages.value = [
-    createMessage(
-      'assistant',
-      'normal',
-      `新的会话已创建。当前身份是${props.currentUser.role === 'teacher' ? '教师管理员' : '普通学生'}，你可以继续提问课程、班级、天气或学习计划。`
-    )
+  saveCurrentSession()
+  const session = createLocalSession()
+  sessions.value = [session, ...sessions.value].slice(0, MAX_SESSIONS)
+  hydrateSession(session)
+  refreshQuickPrompts()
+  persistSessions()
+}
+
+function switchSession(localId) {
+  if (loading.value || localId === activeLocalSessionId.value) return
+  const nextSession = sessions.value.find(item => item.localId === localId)
+  if (!nextSession) return
+  saveCurrentSession()
+  hydrateSession(nextSession)
+  refreshQuickPrompts()
+  persistSessions()
+}
+
+function renameSession(localId, title) {
+  const session = sessions.value.find(item => item.localId === localId)
+  if (!session) return
+  session.title = title
+  session.updatedAt = new Date().toISOString()
+  persistSessions()
+}
+
+function initializeSessions() {
+  const storedSessions = readStoredSessions()
+  sessions.value = storedSessions.length
+    ? storedSessions.map(normalizeSession)
+    : [createLocalSession()]
+
+  const storedActiveId = readActiveSessionId()
+  const active = sessions.value.find(item => item.localId === storedActiveId) || sessions.value[0]
+  hydrateSession(active)
+  refreshQuickPrompts()
+  persistSessions()
+}
+
+function refreshQuickPrompts() {
+  quickPrompts.value = pickRandomItems(buildPromptCandidates(), 4)
+}
+
+function buildPromptCandidates() {
+  const user = props.currentUser
+  const visibleClassIds = getVisibleClassIds()
+  const visibleClasses = props.classes.filter(item => visibleClassIds.includes(item.id))
+  const currentClass = props.classes.find(item => item.id === user.classId)
+  const primaryClassName = visibleClasses[0]?.name || currentClass?.name || '我的班级'
+  const weatherText = [props.weather.city, props.weather.weather, props.weather.temperature]
+    .filter(Boolean)
+    .join(' ')
+  const todayCourse = findCourseByOffset(0)
+  const tomorrowCourse = findCourseByOffset(1)
+  const randomCourse = pickRandomItems(getVisibleCourses(), 1)[0]
+  const weatherQuestion = weatherText
+    ? `结合${weatherText}，给我今天上课出行建议`
+    : '结合今天的天气，给我上课出行建议'
+
+  if (user.role === 'teacher' || user.role === 'admin') {
+    return [
+      `帮我看${primaryClassName}明天上午有哪些课`,
+      `检查${primaryClassName}本周课表有没有冲突`,
+      `给${primaryClassName}生成明天课程提醒`,
+      `帮我汇总${primaryClassName}今天的课程安排`,
+      `如果今天下雨，帮我写一段给${primaryClassName}学生的上课提醒`,
+      `统计${primaryClassName}这周课程分布是否均衡`,
+      `帮我找出${primaryClassName}最早的一节课`,
+      `帮我整理${primaryClassName}今天需要注意的教室安排`,
+      tomorrowCourse ? `明天${tomorrowCourse.courseName}课前需要提醒学生什么？` : `明天${primaryClassName}有没有课程安排？`,
+      randomCourse ? `围绕${randomCourse.courseName}生成一条班级通知` : `帮我生成一条${primaryClassName}课程通知`
+    ]
+  }
+
+  return [
+    '今天我还有哪些课？',
+    '明天上午我有没有课？',
+    '帮我看看本周哪天课最多',
+    weatherQuestion,
+    `基于${primaryClassName}课表，帮我安排今天的学习计划`,
+    '我下一节课是什么，在哪里上？',
+    '帮我检查今天有没有连续课程',
+    '如果我想复习两小时，今天适合安排在什么时候？',
+    todayCourse ? `今天${todayCourse.courseName}上课前我需要准备什么？` : '今天没课的话，帮我安排自习计划',
+    tomorrowCourse ? `明天${tomorrowCourse.courseName}之前我该怎么复习？` : '明天如果没课，帮我规划学习任务',
+    randomCourse ? `帮我围绕${randomCourse.courseName}做一个复习计划` : '帮我生成一个通用学习计划'
   ]
+}
+
+function getVisibleCourses() {
+  const visibleClassIds = getVisibleClassIds()
+  return props.courses.filter(item => visibleClassIds.includes(item.classId))
+}
+
+function findCourseByOffset(dayOffset) {
+  const targetDay = normalizeWeekdayIndex(new Date().getDay() + dayOffset)
+  return getVisibleCourses()
+    .filter(item => parseWeekday(item.weekday) === targetDay)
+    .sort((left, right) => String(left.startTime || '').localeCompare(String(right.startTime || '')))[0]
+}
+
+function pickRandomItems(items, count) {
+  const uniqueItems = [...new Set(items.filter(Boolean))]
+  return uniqueItems
+    .map(item => ({ item, sort: Math.random() }))
+    .sort((left, right) => left.sort - right.sort)
+    .slice(0, count)
+    .map(entry => entry.item)
+}
+
+function createLocalSession(title = DEFAULT_SESSION_TITLE) {
+  return {
+    localId: crypto.randomUUID(),
+    title,
+    agentSessionId: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    messages: [createWelcomeMessage()],
+    steps: [],
+    toolCalls: [],
+    error: '',
+    lastUserMessage: ''
+  }
+}
+
+function normalizeSession(session) {
+  const normalized = {
+    localId: session.localId || crypto.randomUUID(),
+    title: session.title || DEFAULT_SESSION_TITLE,
+    agentSessionId: session.agentSessionId || null,
+    createdAt: session.createdAt || new Date().toISOString(),
+    updatedAt: session.updatedAt || new Date().toISOString(),
+    messages: Array.isArray(session.messages) && session.messages.length
+      ? session.messages
+      : [createWelcomeMessage()],
+    steps: Array.isArray(session.steps) ? session.steps : [],
+    toolCalls: Array.isArray(session.toolCalls) ? session.toolCalls : [],
+    error: session.error || '',
+    lastUserMessage: session.lastUserMessage || ''
+  }
+
+  return normalized
+}
+
+function hydrateSession(session) {
+  activeLocalSessionId.value = session.localId
+  sessionId.value = session.agentSessionId || null
+  messages.value = cloneData(session.messages)
+  steps.value = cloneData(session.steps)
+  toolCalls.value = cloneData(session.toolCalls)
+  error.value = session.error || ''
+  lastUserMessage.value = session.lastUserMessage || ''
+  traceOpen.value = false
+}
+
+function saveCurrentSession() {
+  const session = activeSession.value
+  if (!session) return
+  session.agentSessionId = sessionId.value
+  session.messages = cloneData(messages.value)
+  session.steps = cloneData(steps.value)
+  session.toolCalls = cloneData(toolCalls.value)
+  session.error = error.value
+  session.lastUserMessage = lastUserMessage.value
+  session.updatedAt = new Date().toISOString()
+  persistSessions()
+}
+
+function persistSessions() {
+  try {
+    localStorage.setItem(storageKey.value, JSON.stringify(sessions.value.slice(0, MAX_SESSIONS)))
+    localStorage.setItem(`${storageKey.value}.active`, activeLocalSessionId.value)
+  } catch {
+    // localStorage 不可用时，会话仍在当前页面内可用。
+  }
+}
+
+function readStoredSessions() {
+  try {
+    const raw = localStorage.getItem(storageKey.value)
+    const parsed = JSON.parse(raw || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function readActiveSessionId() {
+  try {
+    return localStorage.getItem(`${storageKey.value}.active`)
+  } catch {
+    return ''
+  }
+}
+
+function createWelcomeMessage() {
+  return createMessage(
+    'assistant',
+    'normal',
+    `你好，${props.currentUser.name}。我是 CampusFlow 平台助手，会基于你的${roleLabel(props.currentUser.role)}权限和平台数据回答问题。`
+  )
+}
+
+function ensureActiveSessionTitle(content) {
+  const session = activeSession.value
+  if (!session) return
+  const title = String(session.title || '').trim()
+  if (title && title !== DEFAULT_SESSION_TITLE) return
+  session.title = toSessionTitle(content)
+  session.updatedAt = new Date().toISOString()
+  persistSessions()
+}
+
+function toSessionTitle(content) {
+  const normalized = String(content).replace(/\s+/g, ' ').trim()
+  if (!normalized) return DEFAULT_SESSION_TITLE
+  return normalized.length > 18 ? `${normalized.slice(0, 18)}...` : normalized
+}
+
+function sessionMeta(session) {
+  if (session.agentSessionId) return `ID ${shortId(session.agentSessionId)}`
+  return formatSessionTime(session.updatedAt)
+}
+
+function formatSessionTime(value) {
+  return dayjs(value).isValid() ? dayjs(value).format('MM-DD HH:mm') : '本地会话'
+}
+
+function shortId(value) {
+  return String(value || '').slice(0, 8)
+}
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value ?? null))
 }
 
 function createMessage(role, type, content, extra = {}) {
@@ -295,6 +640,15 @@ function friendlyError(err) {
   return '未能连接到智能体服务，请确认后端服务已启动。'
 }
 
+function roleLabel(role) {
+  const map = {
+    teacher: '教师',
+    student: '学生',
+    admin: '管理员'
+  }
+  return map[role] || '用户'
+}
+
 function buildUserContext() {
   return {
     user_id: props.currentUser.id,
@@ -323,31 +677,36 @@ function buildAgentMessage(content) {
 function buildAgentPlatformContext() {
   const user = props.currentUser
   const currentClass = props.classes.find(item => item.id === user.classId)
-  const visibleClassIds = user.role === 'teacher'
-    ? user.classIds || props.classes.map(item => item.id)
-    : [user.classId]
+  const visibleClassIds = getVisibleClassIds()
   const visibleStudents = props.students.filter(item => visibleClassIds.includes(item.classId))
   const visibleCourses = props.courses.filter(item => visibleClassIds.includes(item.classId))
   const ownCourses = user.role === 'student'
     ? props.courses.filter(item => item.classId === user.classId)
-    : visibleCourses.filter(item => !user.name || item.teacher === user.name)
+    : visibleCourses
   const contextLines = [
     '【CampusFlow平台上下文】',
     '说明：以下数据来自当前前端已加载的学校平台数据库，只用于回答用户问题。回答时不要复述本段说明。',
-    `当前用户：${user.name}；角色：${user.role === 'teacher' ? '教师' : '学生'}；学号：${user.studentNo || '无'}；教师编号：${user.teacherNo || '无'}；当前班级：${currentClass?.name || user.classId || '未分配'}`,
-    `天气：${props.weather.weather || '未知'}；温度：${props.weather.temperature || '未知'}；风力：${props.weather.wind || '未知'}。`
+    `当前用户：${user.name}；角色：${roleLabel(user.role)}；学号：${user.studentNo || '无'}；教师编号：${user.teacherNo || '无'}；当前班级：${currentClass?.name || user.classId || '未分配'}`,
+    `天气：${props.weather.weather || '未知'}；城市：${props.weather.city || '未知'}；温度：${props.weather.temperature || '未知'}；风力：${props.weather.wind || '未知'}。`
   ]
 
   if (user.role === 'student') {
     contextLines.push(`我的班级：${currentClass?.name || user.classId || '未分配'}`)
     contextLines.push(`我的课表：${formatCourseList(ownCourses)}`)
   } else {
-    contextLines.push(`可管理班级：${formatClassList(props.classes)}`)
+    contextLines.push(`可管理班级：${formatClassList(props.classes.filter(item => visibleClassIds.includes(item.id)))}`)
     contextLines.push(`班级学生：${formatStudentList(visibleStudents)}`)
     contextLines.push(`平台课程：${formatCourseList(visibleCourses)}`)
   }
 
   return contextLines.join('\n')
+}
+
+function getVisibleClassIds() {
+  const user = props.currentUser
+  if (user.role === 'student') return [user.classId].filter(Boolean)
+  if (Array.isArray(user.classIds) && user.classIds.length) return user.classIds
+  return props.classes.map(item => item.id)
 }
 
 function formatClassList(classes) {
@@ -374,5 +733,21 @@ function formatCourseList(courses) {
 
 function limitItems(items, max) {
   return items.slice(0, max)
+}
+
+function normalizeWeekdayIndex(index) {
+  return ((index % 7) + 7) % 7
+}
+
+function parseWeekday(value) {
+  const text = String(value || '').toLowerCase()
+  if (/^(0|7)$/.test(text) || /(星期|周)?(日|天)|sun/.test(text)) return 0
+  if (/^1$/.test(text) || /(星期|周)?一|mon/.test(text)) return 1
+  if (/^2$/.test(text) || /(星期|周)?二|tue/.test(text)) return 2
+  if (/^3$/.test(text) || /(星期|周)?三|wed/.test(text)) return 3
+  if (/^4$/.test(text) || /(星期|周)?四|thu/.test(text)) return 4
+  if (/^5$/.test(text) || /(星期|周)?五|fri/.test(text)) return 5
+  if (/^6$/.test(text) || /(星期|周)?六|sat/.test(text)) return 6
+  return -1
 }
 </script>

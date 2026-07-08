@@ -34,9 +34,17 @@
       <header class="platform-topbar">
         <div>
           <h1>{{ currentTitle }}</h1>
-          <p>{{ roleText }} · {{ currentUser.name }}</p>
+          <p>{{ topbarSubtitle }}</p>
         </div>
-        <button class="ghost-action" type="button" @click="$emit('logout')">退出登录</button>
+
+        <div class="topbar-user-menu">
+          <div class="user-avatar">{{ userInitial }}</div>
+          <div class="user-identity">
+            <strong>{{ currentUser.name }}</strong>
+            <span>{{ roleText }}</span>
+          </div>
+          <button class="ghost-action" type="button" @click="$emit('logout')">退出</button>
+        </div>
       </header>
 
       <div class="platform-content" :class="{ 'assistant-content': activeView === 'assistant' }">
@@ -77,9 +85,26 @@ const navItems = computed(() => {
   return baseItems
 })
 
-const roleText = computed(() => (props.currentUser.role === 'teacher' ? '教师管理员' : '普通学生'))
+const roleText = computed(() => {
+  const map = {
+    teacher: '教师',
+    student: '学生',
+    admin: '管理员'
+  }
+  return map[props.currentUser.role] || '用户'
+})
+
+const userInitial = computed(() => {
+  return String(props.currentUser.name || 'U').slice(0, 1).toUpperCase()
+})
 
 const currentTitle = computed(() => {
   return navItems.value.find(item => item.key === props.activeView)?.label || '校园平台'
+})
+
+const topbarSubtitle = computed(() => {
+  if (props.activeView === 'dashboard') return '天气、今日课程和平台概况'
+  if (props.activeView === 'assistant') return '基于当前登录身份读取平台数据'
+  return `${roleText.value}视角 · ${props.currentUser.name}`
 })
 </script>
