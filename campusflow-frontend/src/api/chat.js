@@ -115,6 +115,7 @@ async function requestStream(payload, handlers) {
     result.answer = split.answer
   }
 
+  result.artifacts = mergeArtifacts(result.artifacts, inferFileArtifactsFromText(result.answer))
   result.artifacts = mergeArtifacts(result.artifacts, filesToArtifacts(result.files))
   handlers.onDone?.(result)
   return result
@@ -163,6 +164,14 @@ function applyStreamEvent(eventName, data, result, handlers) {
       call.output = data.result || ''
       handlers.onToolResult?.(call, data)
     }
+    const inferredArtifacts = inferFileArtifactsFromText(data.result || '')
+    if (inferredArtifacts.length) {
+      result.artifacts = mergeArtifacts(result.artifacts, inferredArtifacts)
+      result.files = mergeFiles(result.files, inferredArtifacts.map(artifactToFile))
+      for (const artifact of inferredArtifacts) {
+        handlers.onFileReady?.(artifact, data)
+      }
+    }
     return
   }
 
@@ -201,6 +210,11 @@ function normalizeChatResponse(response) {
     artifacts: Array.isArray(response.artifacts) ? response.artifacts : [],
     files: Array.isArray(response.files) ? response.files.map(normalizeFile).filter(file => file.name) : []
   }
+  normalized.artifacts = mergeArtifacts(normalized.artifacts, inferFileArtifactsFromText(normalized.answer || ''))
+  normalized.artifacts = mergeArtifacts(
+    normalized.artifacts,
+    inferFileArtifactsFromText((normalized.tool_calls || []).map(call => call.output || '').join('\n'))
+  )
   normalized.artifacts = mergeArtifacts(normalized.artifacts, filesToArtifacts(normalized.files))
   return normalized
 }
@@ -208,18 +222,72 @@ function normalizeChatResponse(response) {
 function normalizeFile(file = {}) {
   const name = file.name || file.file_name || file.filename || file.path || ''
   const path = file.path || name
+  const downloadUrl = file.url || file.download_url || file.downloadUrl || buildFileDownloadUrl(name)
   return {
     name,
     path,
     size: file.size || 0,
     size_formatted: file.size_formatted || file.sizeFormatted || formatFileSize(file.size || 0),
     modified_at: file.modified_at || file.modifiedAt || '',
-    url: file.url || buildFileDownloadUrl(name)
+    url: normalizeFileUrl(downloadUrl)
   }
 }
 
 function filesToArtifacts(files = []) {
   return files.map(fileToArtifact)
+}
+
+function inferFileArtifactsFromText(text = '') {
+  return extractFileNames(text).map(name => fileToArtifact(normalizeFile({ name, path: name })))
+}
+
+function extractFileNames(text = '') {
+  const source = String(text || '')
+  const extensionPattern = /\.(?:pdf|md|docx?|xlsx?|pptx?|csv|txt|html?|json)/gi
+  const names = []
+  let match = extensionPattern.exec(source)
+  while (match) {
+    const end = match.index + match[0].length
+    const start = findFileNameStart(source, match.index)
+    const name = cleanFileName(source.slice(start, end))
+    if (name && !names.includes(name)) {
+      names.push(name)
+    }
+    match = extensionPattern.exec(source)
+  }
+  return names
+}
+
+function findFileNameStart(source, extensionIndex) {
+  const separators = new Set([
+    ' ', '\n', '\t', '\r', '"', "'", '`', '<', '>', '，', '。', '；', '、',
+    '：', ':', '（', '(', '【', '[', '《', '/'
+  ])
+  let index = extensionIndex - 1
+  while (index >= 0 && !separators.has(source[index])) {
+    index -= 1
+  }
+  return index + 1
+}
+
+function cleanFileName(name = '') {
+  const cleaned = String(name)
+    .replace(/^[/\\]+/, '')
+    .replace(/[，。；、：:）)】\]》>]+$/g, '')
+    .trim()
+  if (!cleaned || cleaned.startsWith('.')) return ''
+  return cleaned
+}
+
+function artifactToFile(artifact = {}) {
+  return normalizeFile({
+    name: artifact.name,
+    path: artifact.path,
+    size: artifact.size,
+    size_formatted: artifact.size_formatted,
+    modified_at: artifact.modified_at,
+    url: artifact.url
+  })
 }
 
 function fileToArtifact(file) {
@@ -245,6 +313,16 @@ function mergeArtifacts(current = [], next = []) {
   return merged
 }
 
+function mergeFiles(current = [], next = []) {
+  const merged = [...current]
+  for (const file of next) {
+    if (!file.name) continue
+    const exists = merged.some(item => item.name === file.name || item.path === file.path)
+    if (!exists) merged.push(file)
+  }
+  return merged
+}
+
 function artifactKey(artifact = {}) {
   if (artifact.type === 'file') return `file:${artifact.name || artifact.path || artifact.url}`
   return `${artifact.type}:${artifact.title || ''}:${JSON.stringify(artifact.columns || [])}`
@@ -253,6 +331,13 @@ function artifactKey(artifact = {}) {
 function buildFileDownloadUrl(fileName) {
   if (!fileName) return ''
   return `${apiBaseUrl}/api/files/${encodeURIComponent(fileName)}`
+}
+
+function normalizeFileUrl(url) {
+  if (!url) return ''
+  if (/^https?:\/\//i.test(url)) return url
+  if (url.startsWith('/')) return `${apiBaseUrl}${url}`
+  return `${apiBaseUrl}/${url.replace(/^\/+/, '')}`
 }
 
 function formatFileSize(size) {
