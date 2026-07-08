@@ -200,6 +200,7 @@ def handle_sse_event(event_type, data, collected_steps, collected_tokens, collec
             "size": data.get("size", 0),
             "size_formatted": data.get("size_formatted", ""),
             "modified_at": data.get("modified_at", ""),
+            "download_url": f"/api/files/{data.get("name", "")}",
         })
     elif event_type == "tool_result":
         name = data.get("name", "")
@@ -331,6 +332,26 @@ async def list_files():
         return resp.json()
     except httpx.ConnectError:
         raise HTTPException(status_code=503, detail="无法连接到 Agent 服务")
+
+
+@app.get("/api/files/{file_name}")
+async def download_file(file_name: str):
+    """下载 Agent 生成的文件（如 PDF），从 C 代理"""
+    url = f"{AGENT_API_BASE}/files/{file_name}"
+    try:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return StreamingResponse(
+            resp.aiter_bytes(),
+            media_type=resp.headers.get("content-type", "application/octet-stream"),
+            headers={
+                "Content-Disposition": f'attachment; filename="{file_name}"',
+            }
+        )
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="无法连接到 Agent 服务")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
 
 @app.on_event("shutdown")
 async def shutdown():
