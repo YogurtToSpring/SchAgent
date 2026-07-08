@@ -95,6 +95,11 @@ TOOL_LABELS = {
     "recall_memory": "读取记忆",
     "markdown_to_html": "Markdown转HTML",
     "markdown_to_pdf": "Markdown转PDF",
+    "query_student_schedule": "课表查询",
+    "query_course_info": "课程查询",
+    "query_class_students": "班级查询",
+    "query_student_info": "学生查询",
+    "query_room_info": "教室查询",
 }
 
 async def call_agent_stream_collect(session_id: str, message: str, username: Optional[str] = None) -> ChatResponse:
