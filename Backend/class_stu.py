@@ -22,7 +22,7 @@ def init_db():
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS class_stu (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            course_id INTEGER NOT NULL,
+            course_id TEXT NOT NULL,
             stu_num TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_cs_course ON class_stu(course_id);
@@ -35,14 +35,16 @@ init_db()
 
 
 class EnrollRequest(BaseModel):
-    course_id: int
+    course_id: str
     stu_num: str
 
 
 class DeleteEnrollRequest(BaseModel):
-    course_id: int
+    course_id: str
     stu_num: str
 
+COURSE_DB = os.getenv("COURSE_DB_PATH", "course.db")
+STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
 
 @router.post("/class-stu/enroll")
 def enroll(req: EnrollRequest):
@@ -100,8 +102,6 @@ def drop_course(req: DeleteEnrollRequest):
     finally:
         conn.close()
 
-STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
-
 @router.get("/class-stu/student/{stu_num}")
 def get_student_courses(stu_num: str):
     conn = get_conn()
@@ -111,7 +111,6 @@ def get_student_courses(stu_num: str):
         "SELECT * FROM students WHERE StuNum = ?", (stu_num,)
     ).fetchone()
     if not corse:
-        conn.close()
         conn_stu.close()
         raise HTTPException(status_code=404, detail=f"Student {stu_num} Not Found!")
     rows = conn.execute(
@@ -122,7 +121,7 @@ def get_student_courses(stu_num: str):
 
 
 @router.get("/class-stu/course/{course_id}")
-def get_course_students(course_id: int):
+def get_course_students(course_id: str):
     conn = get_conn()
     conn_course = sqlite3.connect(COURSE_DB)
     conn_course.row_factory = sqlite3.Row
@@ -148,8 +147,6 @@ def list_all():
     conn.close()
     return {"enrollments": [dict(r) for r in rows], "count": len(rows)}
 
-COURSE_DB = os.getenv("COURSE_DB_PATH", "course.db")
-
 @router.get("/class-stu/student/{stu_num}/details")
 def get_student_course_details(stu_num: str):
     conn = get_conn()
@@ -163,7 +160,6 @@ def get_student_course_details(stu_num: str):
         "SELECT * FROM students WHERE StuNum = ?", (stu_num,)
     ).fetchone()
     if not corse:
-        conn.close()
         conn_stu.close()
         raise HTTPException(status_code=404, detail=f"Student {stu_num} Not Found!")
 

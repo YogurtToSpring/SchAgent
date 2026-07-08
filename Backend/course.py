@@ -71,6 +71,16 @@ def addcourse(course_data: Corse):
         conn.close()
         raise HTTPException(status_code=400, detail=f"房间 {course_data.room_id} 不存在")
 
+    tea_conn = sqlite3.connect("teacher.db")
+    tea_conn.row_factory = sqlite3.Row
+    teach = tea_conn.execute(
+        "SELECT * FROM teacher WHERE Name = ?", (course_data.teacher_name,)
+    ).fetchone()
+    tea_conn.close()
+    if not teach:
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Teacher {course_data.teacher_name} Not Found")
+
     conn.execute(
         "INSERT INTO course (course_id, day, start_time, end_time, course_name, teacher_name, room_id, week_start, week_end, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (course_data.course_id, course_data.day, course_data.start_time, course_data.end_time, course_data.course_name, course_data.teacher_name, course_data.room_id, course_data.week_start, course_data.week_end, course_data.semester)
@@ -82,7 +92,7 @@ def addcourse(course_data: Corse):
     return {"message": f"Course {course_data.course_id} added successfully"}
 
 @router.patch("/course/{course_id}/info")
-def change_info(course_id: int, newinfo: Corse):
+def change_info(course_id: str, newinfo: Corse):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     
@@ -90,6 +100,16 @@ def change_info(course_id: int, newinfo: Corse):
     if not course:
         conn.close()
         raise HTTPException(status_code=400, detail="Course Not Found 404")
+    
+    tea_conn = sqlite3.connect("teacher.db")
+    tea_conn.row_factory = sqlite3.Row
+    teach = tea_conn.execute(
+        "SELECT * FROM teacher WHERE Name = ?", (newinfo.teacher_name,)
+    ).fetchone()
+    tea_conn.close()
+    if not teach:
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Teacher {newinfo.teacher_name} Not Found")
 
     parts = newinfo.room_id.split("-")
     if len(parts) != 3:
@@ -278,6 +298,10 @@ def get_teacher_students(teacher_num: str):
 
     return {"teacher_name": teacher_name, "teacher_num": teacher_num, "courses": result, "count": len(result)}
 
+def time_to_minutes(time_str: str) -> int:
+    hours, minutes = map(int, time_str.split(':'))
+    return hours * 60 + minutes
+
 @router.get("/course/free-room")
 def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, building: str, roomid: str):
     connr = sqlite3.connect("room.db")
@@ -296,9 +320,12 @@ def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, bu
         "SELECT * FROM course WHERE room_id = ? AND day = ?", (room, day)
     ).fetchall()
 
+    st_int = time_to_minutes(st_time)
+    ed_int = time_to_minutes(ed_time)
+
     for r in rows:
         if r["week_start"] <= int(week) and r["week_end"] >= int(week):
-            if r["start_time"] <= st_time and r["end_time"] > st_time or r["start_time"] < ed_time and r["end_time"] >= ed_time:
+            if (time_to_minutes(r["start_time"]) <= st_int and time_to_minutes(r["end_time"]) > st_int) or (time_to_minutes(r["start_time"]) < ed_int and time_to_minutes(r["end_time"]) >= ed_int) or (time_to_minutes(r["start_time"]) >= st_int and time_to_minutes(r["end_time"]) <= ed_int):
                 conn1.close()
                 raise HTTPException(status_code=400, detail=f"Conflict caused! {display_courses(r["course_id"], r["day"], r["start_time"])}  |  Selected time is not free")
             

@@ -74,6 +74,9 @@ def login(teacher_data: TeacherLogin):
     row = conn.execute(
         "SELECT * FROM teacher WHERE Number = ?", (teacher_data.Number,)
     ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Login Failure")
     if not verify_password(teacher_data.password, row["password_hash"]):
         conn.close()
         raise HTTPException(status_code=404, detail="Permmission Denied. Authentification Failure")
@@ -89,27 +92,27 @@ def list_teacher():
     return {"teacher": [dict(row) for row in rows]}
 
 @router.delete("/teacher/delete")
-def delete_teacher(teacher_id: str):
+def delete_teacher(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM teacher WHERE Number = ?", (teacher_id,)).fetchone()
+    rows = conn.execute("SELECT * FROM teacher WHERE Number = ?", (teacher_num,)).fetchone()
     if not rows:
         conn.close()
         raise HTTPException(status_code=404, detail="Teacher does not exist")
     conn.execute(
-        "DELETE FROM teacher WHERE Number = ?", (teacher_id,)
+        "DELETE FROM teacher WHERE Number = ?", (teacher_num,)
     )
 
     conn.commit()
     conn.close()    
-    return {"message": f"teacher {teacher_id} deleted successfully"}
+    return {"message": f"teacher {teacher_num} deleted successfully"}
 
 @router.put("/teacher/{teacher_id}/password")
-def change_password(teacher_id: int, password_data: PasswordChange):
+def change_password(teacher_num: str, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     
-    teacher = conn.execute("SELECT * FROM teacher WHERE id = ?", (teacher_id,)).fetchone()
+    teacher = conn.execute("SELECT * FROM teacher WHERE Number = ?", (teacher_num,)).fetchone()
     if not teacher:
         conn.close()
         raise HTTPException(status_code=404, detail="Teacher does not exist")
@@ -124,8 +127,8 @@ def change_password(teacher_id: int, password_data: PasswordChange):
     
     new_hashed = hash_password(password_data.new_password)
     conn.execute(
-        "UPDATE teacher SET password_hash = ? WHERE id = ?",
-        (new_hashed, teacher_id)
+        "UPDATE teacher SET password_hash = ? WHERE Number = ?",
+        (new_hashed, teacher_num)
     )
     conn.commit()
     conn.close()

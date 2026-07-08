@@ -10,7 +10,7 @@ app = FastAPI()
 
 router = APIRouter(prefix="/api")
 
-DATABASE = os.getenv("DATABASE_URL", "class.db")
+DATABASE = os.getenv("DATABASE_URL", "classi.db")
 
 def get_conn():
     conn = sqlite3.connect(DATABASE)
@@ -22,7 +22,7 @@ def init_db():
     conn = get_conn()
 
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS class(
+        CREATE TABLE IF NOT EXISTS classi(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             class_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
@@ -46,11 +46,11 @@ class ModClass(BaseModel):
     master_id: str
     capacity: int
 
-@router.post("/class/add")
+@router.post("/classi/add")
 def add_class(class_data: AddClass):
     conn = get_conn()
     cls = conn.execute(
-        "SELECT * FROM class WHERE class_id = ?", (class_data.class_id,)
+        "SELECT * FROM classi WHERE class_id = ?", (class_data.class_id,)
     ).fetchone()
 
     if cls:
@@ -58,7 +58,7 @@ def add_class(class_data: AddClass):
         raise HTTPException(status_code=400, detail=f"Class {class_data.class_id} had existed")
 
     conn.execute(
-        "INSERT INTO class (class_id, name, master_id, capacity) VALUES (?, ?, ?, ?)",
+        "INSERT INTO classi (class_id, name, master_id, capacity) VALUES (?, ?, ?, ?)",
         (class_data.class_id, class_data.name, class_data.master_id, class_data.capacity)
     )
 
@@ -67,11 +67,11 @@ def add_class(class_data: AddClass):
 
     return {"message": f"Class {class_data.class_id} added successfully"}
 
-@router.patch("/class/{class_id}/info")
+@router.patch("/classi/{class_id}/info")
 def change_info(class_id: str, newinfo: ModClass):
     conn = get_conn()
     cls = conn.execute(
-        "SELECT * FROM class WHERE class_id = ?", (class_id,)
+        "SELECT * FROM classi WHERE class_id = ?", (class_id,)
     ).fetchone()
 
     if not cls:
@@ -79,7 +79,7 @@ def change_info(class_id: str, newinfo: ModClass):
         raise HTTPException(status_code=400, detail=f"Class {class_id} does not exist")    
 
     conn.execute(
-        """UPDATE class SET name = ?, master_id = ?, capacity = ? WHERE class_id = ?""",
+        """UPDATE classi SET name = ?, master_id = ?, capacity = ? WHERE class_id = ?""",
         (newinfo.name, newinfo.master_id, newinfo.capacity, class_id)
     )
     conn.commit()
@@ -87,12 +87,12 @@ def change_info(class_id: str, newinfo: ModClass):
 
     return {"message": f"Class {class_id} had been modified successfully"}
 
-@router.delete("/class/delete")
+@router.delete("/classi/delete")
 def delete_class(class_id: str):
     conn = get_conn()
 
     rows = conn.execute(
-        "SELECT * FROM class WHERE class_id = ?", (class_id,)
+        "SELECT * FROM classi WHERE class_id = ?", (class_id,)
     ).fetchone()
 
     if not rows:
@@ -100,7 +100,7 @@ def delete_class(class_id: str):
         raise HTTPException(status_code=404, detail="Class Not Found 404")
 
     conn.execute(
-        "DELETE FROM class WHERE class_id = ?", (class_id,)
+        "DELETE FROM classi WHERE class_id = ?", (class_id,)
     )
 
     conn.commit()
@@ -108,23 +108,23 @@ def delete_class(class_id: str):
 
     return {"mesasge": "Class deleted successfully"}
 
-@router.get("/class")
+@router.get("/classi")
 def list_all():
     conn = get_conn()
     
     rows = conn.execute(
-        "SELECT * FROM class ORDER BY class_id",
+        "SELECT * FROM classi ORDER BY class_id",
     ).fetchall()
 
     conn.close()
     return {"Classes": [dict(row) for row in rows], "count": len(rows)}
 
-@router.get("/class/info")
+@router.get("/classi/info")
 def get_class_info_by_name(cls_name: str):
     conn = get_conn()
 
     rows = conn.execute(
-        "SELECT * FROM class WHERE name = ?", (cls_name,)
+        "SELECT * FROM classi WHERE name = ?", (cls_name,)
     ).fetchone()
 
     conn1 = sqlite3.connect("teacher.db")
@@ -132,6 +132,7 @@ def get_class_info_by_name(cls_name: str):
 
     if not rows:
         conn.close()
+        conn1.close()
         raise HTTPException(status_code=404, detail="Class Not Found")
     
     teacher = conn1.execute(

@@ -76,6 +76,9 @@ def login(student_data: StudentLogin):
     row = conn.execute(
         "SELECT * FROM students WHERE StuNum = ?", (student_data.StuNum,)
     ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Login Failure")
     if not verify_password(student_data.password, row["password_hash"]):
         conn.close()
         raise HTTPException(status_code=404, detail="Permmission Denied. Authentification Failure")
@@ -108,11 +111,11 @@ def delete_student(student_id: str):
 
 
 @router.patch("/students/{student_id}/Cls")
-def change_cls(student_id: int, newcls: str):
+def change_cls(student_id: str, newcls: str):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     
-    student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+    student = conn.execute("SELECT * FROM students WHERE StuNum = ?", (student_id,)).fetchone()
     if not student:
         conn.close()
         raise HTTPException(status_code=404, detail="Student does not exist")
@@ -121,7 +124,7 @@ def change_cls(student_id: int, newcls: str):
         raise HTTPException(status_code=400, detail="Class number had not been changed")
     
     conn.execute(
-        "UPDATE students SET Cls = ? WHERE id = ?",
+        "UPDATE students SET Cls = ? WHERE StuNum = ?",
         (newcls, student_id)
     )
     conn.commit()
@@ -130,11 +133,11 @@ def change_cls(student_id: int, newcls: str):
     return {"message": "class changed successfully"}
 
 @router.put("/students/{student_id}/password")
-def change_password(student_id: int, password_data: PasswordChange):
+def change_password(student_num: str, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     
-    student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+    student = conn.execute("SELECT * FROM students WHERE StuNum = ?", (student_num,)).fetchone()
     if not student:
         conn.close()
         raise HTTPException(status_code=404, detail="Student does not exist")
@@ -149,8 +152,8 @@ def change_password(student_id: int, password_data: PasswordChange):
     
     new_hashed = hash_password(password_data.new_password)
     conn.execute(
-        "UPDATE students SET password_hash = ? WHERE id = ?",
-        (new_hashed, student_id)
+        "UPDATE students SET password_hash = ? WHERE StuNum = ?",
+        (new_hashed, student_num)
     )
     conn.commit()
     conn.close()

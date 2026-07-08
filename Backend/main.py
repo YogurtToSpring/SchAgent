@@ -28,6 +28,8 @@ from teacher import router as teacher_router
 from admin import router as admin_router
 from room import router as room_router
 from class_stu import router as class_stu_router
+from classi import router as classi_router
+from classmate import router as classmate_router
 
 AGENT_API_BASE = "http://localhost:8000"
 
@@ -39,6 +41,8 @@ app.include_router(teacher_router)
 app.include_router(admin_router)
 app.include_router(room_router)
 app.include_router(class_stu_router)
+app.include_router(classi_router)
+app.include_router(classmate_router)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
