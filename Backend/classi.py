@@ -106,7 +106,7 @@ def delete_class(class_id: str):
     conn.commit()
     conn.close()
 
-    return {"mesasge": "Class deleted successfully"}
+    return {"message": "Class deleted successfully"}
 
 @router.get("/classi")
 def list_all():

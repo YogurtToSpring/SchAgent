@@ -132,7 +132,7 @@ def change_cls(student_id: str, newcls: str):
 
     return {"message": "class changed successfully"}
 
-@router.put("/students/{student_id}/password")
+@router.put("/students/{student_num}/password")
 def change_password(student_num: str, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row

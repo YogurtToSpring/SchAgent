@@ -81,12 +81,12 @@ def add_func(addinfo: AddRela):
     return {"message": f"Add student {addinfo.stu_num} successfully"}
 
 @router.get("/classmate/{class_id}")
-def get_peer_name(cls_id: str):
+def get_peer_name(class_id: str):
     conn = get_conn()
     class_conn = sqlite3.connect("classi.db")
     class_conn.row_factory = sqlite3.Row
     cls = class_conn.execute(
-        "SELECT * FROM classi WHERE class_id = ?", (cls_id,)
+        "SELECT * FROM classi WHERE class_id = ?", (class_id,)
     ).fetchone()
     class_conn.close()
     if not cls:
@@ -94,7 +94,7 @@ def get_peer_name(cls_id: str):
         raise HTTPException(status_code=404, detail="Class Not Found")
     
     rows = conn.execute(
-        "SELECT * FROM classmate WHERE class_id = ?", (cls_id,)
+        "SELECT * FROM classmate WHERE class_id = ?", (class_id,)
     ).fetchall()
 
     if not rows:
@@ -118,7 +118,7 @@ def get_peer_name(cls_id: str):
         if info is None:
             continue
         enriched.append({"StuNum": info["StuNum"], "Name": info["Name"]})
-    return {"class_id": cls_id, "student_info": enriched, "count": len(enriched)}
+    return {"class_id": class_id, "student_info": enriched, "count": len(enriched)}
 
 @router.get("/classmate")
 def list_all():

@@ -107,7 +107,7 @@ def delete_teacher(teacher_num: str):
     conn.close()    
     return {"message": f"teacher {teacher_num} deleted successfully"}
 
-@router.put("/teacher/{teacher_id}/password")
+@router.put("/teacher/{teacher_num}/password")
 def change_password(teacher_num: str, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row

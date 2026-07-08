@@ -175,7 +175,7 @@ def delete_course(course_id: str):
     conn.commit()
     conn.close()
 
-    return {"mesasge": "Course deleted successfully"}
+    return {"message": "Course deleted successfully"}
 
 @router.get("/course")
 def list_all():
