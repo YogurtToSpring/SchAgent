@@ -22,11 +22,12 @@
         </button>
       </nav>
 
-      <div class="future-modules">
-        <div class="panel-title">后续可扩展</div>
-        <span>成绩系统</span>
-        <span>论坛系统</span>
-        <span>会议模块</span>
+      <div class="sidebar-user">
+        <div class="user-avatar">{{ userInitial }}</div>
+        <div>
+          <strong>{{ currentUser.name }}</strong>
+          <span>{{ roleText }}</span>
+        </div>
       </div>
     </aside>
 
@@ -56,7 +57,20 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Bot, CalendarDays, Home, UsersRound } from 'lucide-vue-next'
+import {
+  Bell,
+  Bot,
+  BookOpen,
+  CalendarDays,
+  CheckSquare,
+  Files,
+  GraduationCap,
+  Home,
+  MessageSquareText,
+  ShieldCheck,
+  UserRound,
+  UsersRound
+} from 'lucide-vue-next'
 
 const props = defineProps({
   currentUser: {
@@ -73,13 +87,24 @@ defineEmits(['navigate', 'logout'])
 
 const navItems = computed(() => {
   const baseItems = [
-    { key: 'dashboard', label: '首页概览', icon: Home },
-    { key: 'schedule', label: props.currentUser.role === 'teacher' ? '班级课表' : '我的课表', icon: CalendarDays },
+    { key: 'dashboard', label: '首页工作台', icon: Home },
+    { key: 'profile', label: '我的信息', icon: UserRound },
+    { key: 'todos', label: '待办事项', icon: CheckSquare },
+    { key: 'schedule', label: props.currentUser.role === 'teacher' ? '教学课表' : '我的课表', icon: CalendarDays },
+    { key: 'grades', label: props.currentUser.role === 'teacher' ? '成绩录入' : '成绩系统', icon: GraduationCap },
+    { key: 'library', label: '图书馆预约', icon: BookOpen },
+    { key: 'forum', label: '校园论坛', icon: MessageSquareText },
+    { key: 'notifications', label: '通知消息', icon: Bell },
+    { key: 'files', label: '文件中心', icon: Files },
     { key: 'assistant', label: '智能助手', icon: Bot }
   ]
 
-  if (props.currentUser.role === 'teacher') {
-    baseItems.splice(1, 0, { key: 'classes', label: '班级管理', icon: UsersRound })
+  if (props.currentUser.role === 'teacher' || props.currentUser.role === 'admin') {
+    baseItems.splice(4, 0, { key: 'classes', label: '班级管理', icon: UsersRound })
+  }
+
+  if (props.currentUser.role === 'admin') {
+    baseItems.push({ key: 'admin', label: '管理后台', icon: ShieldCheck })
   }
 
   return baseItems
@@ -103,8 +128,8 @@ const currentTitle = computed(() => {
 })
 
 const topbarSubtitle = computed(() => {
-  if (props.activeView === 'dashboard') return '天气、今日课程和平台概况'
-  if (props.activeView === 'assistant') return '基于当前登录身份读取平台数据'
+  if (props.activeView === 'dashboard') return '今日课程、待办和消息'
+  if (props.activeView === 'assistant') return '基于当前身份和页面数据执行任务'
   return `${roleText.value}视角 · ${props.currentUser.name}`
 })
 </script>

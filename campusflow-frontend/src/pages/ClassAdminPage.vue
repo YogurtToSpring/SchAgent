@@ -4,7 +4,7 @@
       <div class="section-heading">
         <div>
           <h2>班级管理</h2>
-          <p>教师管理员可以维护班级，并把学生分配到指定班级。</p>
+          <p>维护班级、学生归属和教学组织。</p>
         </div>
       </div>
 
@@ -43,7 +43,7 @@
       <div class="section-heading">
         <div>
           <h2>学生班级分配</h2>
-          <p>模拟学校平台中的学生归属维护。</p>
+          <p>调整学生所属班级后，课表和助手上下文同步更新。</p>
         </div>
       </div>
 
@@ -79,7 +79,7 @@
       <div class="section-heading">
         <div>
           <h2>课表导入与调整</h2>
-          <p>当前版本用表单模拟导入，后续可替换为 Excel、CSV 或教务系统接口。</p>
+          <p>维护课程、教师、教室和周次。</p>
         </div>
       </div>
 
