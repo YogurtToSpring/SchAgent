@@ -11,7 +11,7 @@ export async function sendMessage(payload) {
   const { data } = await axios.post(`${apiBaseUrl}/api/chat`, payload, {
     timeout: 30000
   })
-  return data
+  return normalizeChatResponse(data)
 }
 
 export async function sendMessageStream(payload, handlers = {}) {
@@ -53,7 +53,8 @@ async function requestStream(payload, handlers) {
     reasoning: '',
     steps: [],
     tool_calls: [],
-    artifacts: []
+    artifacts: [],
+    files: []
   }
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
@@ -114,6 +115,8 @@ async function requestStream(payload, handlers) {
     result.answer = split.answer
   }
 
+  result.artifacts = mergeArtifacts(result.artifacts, inferFileArtifactsFromText(result.answer))
+  result.artifacts = mergeArtifacts(result.artifacts, filesToArtifacts(result.files))
   handlers.onDone?.(result)
   return result
 }
@@ -161,6 +164,24 @@ function applyStreamEvent(eventName, data, result, handlers) {
       call.output = data.result || ''
       handlers.onToolResult?.(call, data)
     }
+    const inferredArtifacts = inferFileArtifactsFromText(data.result || '')
+    if (inferredArtifacts.length) {
+      result.artifacts = mergeArtifacts(result.artifacts, inferredArtifacts)
+      result.files = mergeFiles(result.files, inferredArtifacts.map(artifactToFile))
+      for (const artifact of inferredArtifacts) {
+        handlers.onFileReady?.(artifact, data)
+      }
+    }
+    return
+  }
+
+  if (eventName === 'file_ready') {
+    const file = normalizeFile(data)
+    if (!file.name) return
+    result.files.push(file)
+    const artifact = fileToArtifact(file)
+    result.artifacts = mergeArtifacts(result.artifacts, [artifact])
+    handlers.onFileReady?.(artifact, data)
     return
   }
 
@@ -173,10 +194,163 @@ function applyStreamEvent(eventName, data, result, handlers) {
 
   if (eventName === 'done') {
     result.session_id = data.session_id || result.session_id
+    if (Array.isArray(data.files)) {
+      result.files = data.files.map(normalizeFile).filter(file => file.name)
+      result.artifacts = mergeArtifacts(result.artifacts, filesToArtifacts(result.files))
+    }
     if (data.error && result.status === 'success') {
       result.status = 'failed'
     }
   }
+}
+
+function normalizeChatResponse(response) {
+  const normalized = {
+    ...response,
+    artifacts: Array.isArray(response.artifacts) ? response.artifacts : [],
+    files: Array.isArray(response.files) ? response.files.map(normalizeFile).filter(file => file.name) : []
+  }
+  normalized.artifacts = mergeArtifacts(normalized.artifacts, inferFileArtifactsFromText(normalized.answer || ''))
+  normalized.artifacts = mergeArtifacts(
+    normalized.artifacts,
+    inferFileArtifactsFromText((normalized.tool_calls || []).map(call => call.output || '').join('\n'))
+  )
+  normalized.artifacts = mergeArtifacts(normalized.artifacts, filesToArtifacts(normalized.files))
+  return normalized
+}
+
+function normalizeFile(file = {}) {
+  const name = file.name || file.file_name || file.filename || file.path || ''
+  const path = file.path || name
+  const downloadUrl = file.url || file.download_url || file.downloadUrl || buildFileDownloadUrl(name)
+  return {
+    name,
+    path,
+    size: file.size || 0,
+    size_formatted: file.size_formatted || file.sizeFormatted || formatFileSize(file.size || 0),
+    modified_at: file.modified_at || file.modifiedAt || '',
+    url: normalizeFileUrl(downloadUrl)
+  }
+}
+
+function filesToArtifacts(files = []) {
+  return files.map(fileToArtifact)
+}
+
+function inferFileArtifactsFromText(text = '') {
+  return extractFileNames(text).map(name => fileToArtifact(normalizeFile({ name, path: name })))
+}
+
+function extractFileNames(text = '') {
+  const source = String(text || '')
+  const extensionPattern = /\.(?:pdf|md|docx?|xlsx?|pptx?|csv|txt|html?|json)/gi
+  const names = []
+  let match = extensionPattern.exec(source)
+  while (match) {
+    const end = match.index + match[0].length
+    const start = findFileNameStart(source, match.index)
+    const name = cleanFileName(source.slice(start, end))
+    if (name && !names.includes(name)) {
+      names.push(name)
+    }
+    match = extensionPattern.exec(source)
+  }
+  return names
+}
+
+function findFileNameStart(source, extensionIndex) {
+  const separators = new Set([
+    ' ', '\n', '\t', '\r', '"', "'", '`', '<', '>', '，', '。', '；', '、',
+    '：', ':', '（', '(', '【', '[', '《', '/'
+  ])
+  let index = extensionIndex - 1
+  while (index >= 0 && !separators.has(source[index])) {
+    index -= 1
+  }
+  return index + 1
+}
+
+function cleanFileName(name = '') {
+  const cleaned = String(name)
+    .replace(/^[/\\]+/, '')
+    .replace(/[，。；、：:）)】\]》>]+$/g, '')
+    .trim()
+  if (!cleaned || cleaned.startsWith('.')) return ''
+  return cleaned
+}
+
+function artifactToFile(artifact = {}) {
+  return normalizeFile({
+    name: artifact.name,
+    path: artifact.path,
+    size: artifact.size,
+    size_formatted: artifact.size_formatted,
+    modified_at: artifact.modified_at,
+    url: artifact.url
+  })
+}
+
+function fileToArtifact(file) {
+  return {
+    type: 'file',
+    title: '生成文件',
+    name: file.name,
+    path: file.path,
+    size: file.size,
+    size_formatted: file.size_formatted,
+    modified_at: file.modified_at,
+    url: file.url || buildFileDownloadUrl(file.name)
+  }
+}
+
+function mergeArtifacts(current = [], next = []) {
+  const merged = [...current]
+  for (const artifact of next) {
+    const key = artifactKey(artifact)
+    const exists = merged.some(item => artifactKey(item) === key)
+    if (!exists) merged.push(artifact)
+  }
+  return merged
+}
+
+function mergeFiles(current = [], next = []) {
+  const merged = [...current]
+  for (const file of next) {
+    if (!file.name) continue
+    const exists = merged.some(item => item.name === file.name || item.path === file.path)
+    if (!exists) merged.push(file)
+  }
+  return merged
+}
+
+function artifactKey(artifact = {}) {
+  if (artifact.type === 'file') return `file:${artifact.name || artifact.path || artifact.url}`
+  return `${artifact.type}:${artifact.title || ''}:${JSON.stringify(artifact.columns || [])}`
+}
+
+function buildFileDownloadUrl(fileName) {
+  if (!fileName) return ''
+  return `${apiBaseUrl}/api/files/${encodeURIComponent(fileName)}`
+}
+
+function normalizeFileUrl(url) {
+  if (!url) return ''
+  if (/^https?:\/\//i.test(url)) return url
+  if (url.startsWith('/')) return `${apiBaseUrl}${url}`
+  return `${apiBaseUrl}/${url.replace(/^\/+/, '')}`
+}
+
+function formatFileSize(size) {
+  const numericSize = Number(size || 0)
+  if (!numericSize) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = numericSize
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`
 }
 
 function splitReasoning(text) {

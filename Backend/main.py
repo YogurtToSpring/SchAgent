@@ -15,8 +15,9 @@ SchAgent Backend 校园生活智能助手后端
 import uuid
 import httpx
 import json
+from urllib.parse import quote
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -334,18 +335,25 @@ async def list_files():
         raise HTTPException(status_code=503, detail="无法连接到 Agent 服务")
 
 
-@app.get("/api/files/{file_name}")
+@app.get("/api/files/{file_name:path}")
 async def download_file(file_name: str):
     """下载 Agent 生成的文件（如 PDF），从 C 代理"""
-    url = f"{AGENT_API_BASE}/files/{file_name}"
+    normalized_name = file_name.replace("\\", "/").strip("/")
+    if not normalized_name or ".." in normalized_name.split("/"):
+        raise HTTPException(status_code=400, detail="非法文件名")
+
+    encoded_name = quote(normalized_name, safe="")
+    display_name = normalized_name.split("/")[-1]
+    encoded_display_name = quote(display_name)
+    url = f"{AGENT_API_BASE}/files/{encoded_name}"
     try:
         resp = await client.get(url)
         resp.raise_for_status()
-        return StreamingResponse(
-            resp.aiter_bytes(),
+        return Response(
+            content=resp.content,
             media_type=resp.headers.get("content-type", "application/octet-stream"),
             headers={
-                "Content-Disposition": f'attachment; filename="{file_name}"',
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_display_name}",
             }
         )
     except httpx.ConnectError:
