@@ -119,8 +119,32 @@ button:disabled {
 
 .demo-accounts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  border: 1px solid #d7dee4;
+  border-radius: 8px;
+  padding: 4px;
+  background: #f4f7f9;
+}
+
+.auth-tabs button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #52616b;
+  font-weight: 800;
+}
+
+.auth-tabs button.active {
+  background: #183642;
+  color: #fff;
 }
 
 .demo-accounts button {
@@ -206,6 +230,21 @@ select:focus {
   border: 1px solid #cdd7de;
   background: #fff;
   color: #21313b;
+}
+
+.platform-alert {
+  display: grid;
+  gap: 4px;
+  margin: 0 18px 18px;
+  border: 1px solid #efc16b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff8e8;
+  color: #7b5300;
+}
+
+.platform-alert strong {
+  color: #5d3d00;
 }
 
 .platform-shell {
@@ -425,7 +464,7 @@ select:focus {
 
 .schedule-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }

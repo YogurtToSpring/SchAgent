@@ -1,0 +1,336 @@
+import axios from 'axios'
+
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
+
+const platformClient = axios.create({
+  baseURL: apiBaseUrl,
+  timeout: 15000
+})
+
+const weekdayLabels = {
+  1: '周一',
+  2: '周二',
+  3: '周三',
+  4: '周四',
+  5: '周五',
+  6: '周六',
+  7: '周日'
+}
+
+const weekdayValues = Object.entries(weekdayLabels).reduce((acc, [value, label]) => {
+  acc[label] = Number(value)
+  return acc
+}, {})
+
+export async function loadPlatformSnapshot() {
+  const [studentsRes, teachersRes, coursesRes, roomsRes, enrollmentsRes] = await Promise.all([
+    platformClient.get('/api/students'),
+    platformClient.get('/api/teacher'),
+    platformClient.get('/api/course'),
+    platformClient.get('/api/room'),
+    platformClient.get('/api/class-stu')
+  ])
+
+  const students = normalizeStudents(studentsRes.data?.students || [])
+  const teachers = normalizeTeachers(teachersRes.data?.teacher || [])
+  const rooms = normalizeRooms(roomsRes.data?.rooms || [])
+  const enrollments = normalizeEnrollments(enrollmentsRes.data?.enrollments || [])
+  const courses = normalizeCourses(coursesRes.data?.Courses || coursesRes.data?.courses || [], enrollments, students)
+  const classes = deriveClasses(students, courses)
+
+  return {
+    classes,
+    students,
+    teachers,
+    courses,
+    rooms,
+    enrollments
+  }
+}
+
+export async function loginPlatformUser({ role, username, password }) {
+  const account = username.trim()
+  const loginRole = role || 'student'
+
+  if (loginRole === 'student') {
+    await platformClient.post('/api/students/login', {
+      StuNum: account,
+      password
+    })
+    const { data } = await platformClient.get('/api/students')
+    const student = normalizeStudents(data?.students || []).find(item => item.studentNo === account)
+    if (!student) throw new Error('登录成功，但没有找到对应学生信息。')
+
+    return {
+      id: student.userId,
+      username: student.studentNo,
+      role: 'student',
+      name: student.name,
+      studentNo: student.studentNo,
+      classId: student.classId
+    }
+  }
+
+  if (loginRole === 'admin') {
+    await platformClient.post('/api/admin/login', {
+      Number: account,
+      password
+    })
+    const { data } = await platformClient.get('/api/admin')
+    const admin = (data?.admin || []).find(item => String(item.Number) === account)
+
+    return {
+      id: `admin-${account}`,
+      username: account,
+      role: 'teacher',
+      authRole: 'admin',
+      name: admin?.Name || '管理员',
+      teacherNo: account,
+      classIds: []
+    }
+  }
+
+  await platformClient.post('/api/teacher/login', {
+    Number: account,
+    password
+  })
+  const { data } = await platformClient.get('/api/teacher')
+  const teacher = normalizeTeachers(data?.teacher || []).find(item => item.teacherNo === account)
+  if (!teacher) throw new Error('登录成功，但没有找到对应教师信息。')
+
+  return {
+    id: teacher.id,
+    username: teacher.username,
+    role: 'teacher',
+    name: teacher.name,
+    teacherNo: teacher.teacherNo,
+    classIds: []
+  }
+}
+
+export async function registerPlatformUser({ role, name, username, password, className }) {
+  const account = username.trim()
+  const displayName = name.trim()
+  const registerRole = role || 'student'
+
+  if (registerRole === 'student') {
+    await platformClient.post('/api/students/register', {
+      Name: displayName,
+      StuNum: account,
+      Cls: className?.trim() || '未分配',
+      password
+    })
+    return loginPlatformUser({ role: 'student', username: account, password })
+  }
+
+  if (registerRole === 'admin') {
+    await platformClient.post('/api/admin/register', {
+      Name: displayName,
+      Number: account,
+      password
+    })
+    return loginPlatformUser({ role: 'admin', username: account, password })
+  }
+
+  await platformClient.post('/api/teacher/register', {
+    Name: displayName,
+    Number: account,
+    password
+  })
+  return loginPlatformUser({ role: 'teacher', username: account, password })
+}
+
+export async function loadRealtimeWeather() {
+  const latitude = import.meta.env.VITE_WEATHER_LAT || '30.5928'
+  const longitude = import.meta.env.VITE_WEATHER_LON || '114.3055'
+  const city = import.meta.env.VITE_WEATHER_CITY || '武汉'
+  const params = new URLSearchParams({
+    latitude,
+    longitude,
+    current: 'temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m',
+    timezone: 'Asia/Shanghai'
+  })
+
+  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`)
+  if (!response.ok) throw new Error(`天气接口返回 ${response.status}`)
+  const data = await response.json()
+  const current = data.current || {}
+
+  return {
+    city,
+    weather: weatherCodeLabel(current.weather_code),
+    temperature: current.temperature_2m == null ? '未知' : `${Math.round(current.temperature_2m)}℃`,
+    wind: current.wind_speed_10m == null ? '风力未知' : `${Math.round(current.wind_speed_10m)} km/h`,
+    humidity: current.relative_humidity_2m == null ? null : `${current.relative_humidity_2m}%`,
+    updatedAt: current.time ? `实时 ${current.time.replace('T', ' ')}` : '实时数据'
+  }
+}
+
+export async function updateStudentClass(studentId, classId) {
+  const { data } = await platformClient.patch(`/api/students/${studentId}/Cls`, null, {
+    params: {
+      newcls: classId
+    }
+  })
+  return data
+}
+
+export async function createCourse(course) {
+  const backendCourse = toBackendCourse(course)
+  const { data } = await platformClient.post('/api/course/add', backendCourse)
+  return data
+}
+
+export async function enrollStudent(courseId, studentNo) {
+  const { data } = await platformClient.post('/api/class-stu/enroll', {
+    course_id: Number(courseId),
+    stu_num: String(studentNo)
+  })
+  return data
+}
+
+export function toBackendCourse(course) {
+  return {
+    course_id: String(course.courseId || course.backendCourseId || Date.now()),
+    day: weekdayValues[course.weekday] || Number(course.day) || 1,
+    start_time: course.startTime || course.start_time || '08:00',
+    end_time: course.endTime || course.end_time || '09:40',
+    course_name: course.courseName || course.course_name || '未命名课程',
+    teacher_name: course.teacher || course.teacher_name || '待定',
+    room_id: course.roomId || course.location || course.room_id || '3-3-301',
+    week_start: Number(course.weekStart || course.week_start || 1),
+    week_end: Number(course.weekEnd || course.week_end || 16),
+    semester: course.semester || '2025-2026-2'
+  }
+}
+
+function normalizeStudents(rows) {
+  return rows.map(row => ({
+    id: row.id,
+    backendId: row.id,
+    userId: `student-${row.StuNum}`,
+    name: row.Name || '未命名学生',
+    studentNo: String(row.StuNum || ''),
+    classId: row.Cls || '未分配',
+    raw: row
+  }))
+}
+
+function normalizeTeachers(rows) {
+  return rows.map(row => ({
+    id: `teacher-${row.Number}`,
+    backendId: row.id,
+    role: 'teacher',
+    name: row.Name || '未命名教师',
+    teacherNo: String(row.Number || ''),
+    username: String(row.Number || ''),
+    raw: row
+  }))
+}
+
+function normalizeRooms(rows) {
+  return rows.map(row => {
+    const roomFull = row.room_full || `${row.area}-${row.building}-${row.room_id}`
+    return {
+      id: row.id,
+      area: row.area,
+      building: row.building,
+      roomId: row.room_id,
+      roomFull,
+      label: `${roomFull}${row.capacity ? `（${row.capacity}人）` : ''}`,
+      raw: row
+    }
+  })
+}
+
+function normalizeEnrollments(rows) {
+  return rows.map(row => ({
+    id: row.id,
+    courseId: String(row.course_id),
+    studentNo: String(row.stu_num || ''),
+    raw: row
+  }))
+}
+
+function normalizeCourses(rows, enrollments, students) {
+  const studentByNo = new Map(students.map(student => [student.studentNo, student]))
+  const classIdsByCourse = new Map()
+
+  for (const enrollment of enrollments) {
+    const student = studentByNo.get(enrollment.studentNo)
+    if (!student) continue
+    if (!classIdsByCourse.has(enrollment.courseId)) {
+      classIdsByCourse.set(enrollment.courseId, new Set())
+    }
+    classIdsByCourse.get(enrollment.courseId).add(student.classId)
+  }
+
+  return rows.flatMap(row => {
+    const backendCourseId = String(row.course_id || row.id)
+    const classIds = [...(classIdsByCourse.get(backendCourseId) || ['未分班课程'])]
+
+    return classIds.map(classId => ({
+      id: `course-${backendCourseId}-${classId}`,
+      backendId: row.id,
+      backendCourseId,
+      classId,
+      courseName: row.course_name || '未命名课程',
+      teacher: row.teacher_name || '待定',
+      weekday: weekdayLabels[Number(row.day)] || `周${row.day || '?'}`,
+      startTime: row.start_time || '',
+      endTime: row.end_time || '',
+      location: row.room_id || '待定',
+      roomId: row.room_id || '',
+      weekStart: row.week_start,
+      weekEnd: row.week_end,
+      weeks: `${row.week_start || 1}-${row.week_end || 16}周`,
+      semester: row.semester || '',
+      raw: row
+    }))
+  })
+}
+
+function deriveClasses(students, courses) {
+  const classIdsWithCourses = unique(courses.map(course => course.classId).filter(Boolean))
+  const classIdsFromStudents = unique(students.map(student => student.classId).filter(Boolean))
+  const classIds = unique([...classIdsWithCourses, ...classIdsFromStudents])
+
+  return classIds.map(classId => ({
+    id: classId,
+    name: classId,
+    grade: '数据库',
+    major: '后端学生表',
+    headTeacher: '待分配'
+  }))
+}
+
+function unique(values) {
+  return [...new Set(values)]
+}
+
+function weatherCodeLabel(code) {
+  const labels = {
+    0: '晴',
+    1: '多云',
+    2: '多云',
+    3: '阴',
+    45: '雾',
+    48: '雾凇',
+    51: '小毛毛雨',
+    53: '毛毛雨',
+    55: '大毛毛雨',
+    61: '小雨',
+    63: '中雨',
+    65: '大雨',
+    71: '小雪',
+    73: '中雪',
+    75: '大雪',
+    80: '阵雨',
+    81: '强阵雨',
+    82: '暴雨',
+    95: '雷暴',
+    96: '雷暴伴冰雹',
+    99: '强雷暴伴冰雹'
+  }
+  return labels[Number(code)] || '天气未知'
+}

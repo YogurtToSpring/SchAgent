@@ -217,7 +217,7 @@ STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
 TEACHER_DB = os.getenv("TEACHER_DB_PATH", "teacher.db")
 
 
-@router.get("/course/teacher/{teacher_name}/students")
+@router.get("/course/teacher/{teacher_num}/students")
 def get_teacher_students(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row

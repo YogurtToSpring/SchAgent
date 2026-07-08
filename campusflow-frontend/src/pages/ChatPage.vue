@@ -143,7 +143,7 @@ async function handleSend(text) {
     const finalResponse = await sendMessageStream(
       {
         session_id: sessionId.value,
-        message: content,
+        message: buildAgentMessage(content),
         user_context: buildUserContext(),
         platform_context: buildPlatformContext()
       },
@@ -300,6 +300,8 @@ function buildUserContext() {
     user_id: props.currentUser.id,
     name: props.currentUser.name,
     role: props.currentUser.role,
+    student_no: props.currentUser.studentNo || null,
+    teacher_num: props.currentUser.teacherNo || null,
     class_id: props.currentUser.classId || null,
     class_ids: props.currentUser.classIds || []
   }
@@ -312,5 +314,65 @@ function buildPlatformContext() {
     courses: props.courses,
     weather: props.weather
   }
+}
+
+function buildAgentMessage(content) {
+  return `${buildAgentPlatformContext()}\n\n用户问题：${content}`
+}
+
+function buildAgentPlatformContext() {
+  const user = props.currentUser
+  const currentClass = props.classes.find(item => item.id === user.classId)
+  const visibleClassIds = user.role === 'teacher'
+    ? user.classIds || props.classes.map(item => item.id)
+    : [user.classId]
+  const visibleStudents = props.students.filter(item => visibleClassIds.includes(item.classId))
+  const visibleCourses = props.courses.filter(item => visibleClassIds.includes(item.classId))
+  const ownCourses = user.role === 'student'
+    ? props.courses.filter(item => item.classId === user.classId)
+    : visibleCourses.filter(item => !user.name || item.teacher === user.name)
+  const contextLines = [
+    '【CampusFlow平台上下文】',
+    '说明：以下数据来自当前前端已加载的学校平台数据库，只用于回答用户问题。回答时不要复述本段说明。',
+    `当前用户：${user.name}；角色：${user.role === 'teacher' ? '教师' : '学生'}；学号：${user.studentNo || '无'}；教师编号：${user.teacherNo || '无'}；当前班级：${currentClass?.name || user.classId || '未分配'}`,
+    `天气：${props.weather.weather || '未知'}；温度：${props.weather.temperature || '未知'}；风力：${props.weather.wind || '未知'}。`
+  ]
+
+  if (user.role === 'student') {
+    contextLines.push(`我的班级：${currentClass?.name || user.classId || '未分配'}`)
+    contextLines.push(`我的课表：${formatCourseList(ownCourses)}`)
+  } else {
+    contextLines.push(`可管理班级：${formatClassList(props.classes)}`)
+    contextLines.push(`班级学生：${formatStudentList(visibleStudents)}`)
+    contextLines.push(`平台课程：${formatCourseList(visibleCourses)}`)
+  }
+
+  return contextLines.join('\n')
+}
+
+function formatClassList(classes) {
+  if (!classes.length) return '暂无班级数据'
+  return classes.map(item => `${item.name || item.id}`).join('、')
+}
+
+function formatStudentList(students) {
+  if (!students.length) return '暂无学生数据'
+  return limitItems(students, 40)
+    .map(item => `${item.name}(${item.studentNo})/${item.classId}`)
+    .join('；')
+}
+
+function formatCourseList(courses) {
+  if (!courses.length) return '暂无课程数据'
+  return limitItems(courses, 40)
+    .map(item => {
+      const className = props.classes.find(cls => cls.id === item.classId)?.name || item.classId || '未分班'
+      return `${className}｜${item.weekday} ${item.startTime}-${item.endTime}｜${item.courseName}｜教师:${item.teacher}｜地点:${item.location}｜周次:${item.weeks || '未设置'}`
+    })
+    .join('；')
+}
+
+function limitItems(items, max) {
+  return items.slice(0, max)
 }
 </script>

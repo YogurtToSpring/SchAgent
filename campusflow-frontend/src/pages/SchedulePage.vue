@@ -18,10 +18,6 @@
           <strong>{{ selectedClass?.name || '未分配' }}</strong>
         </div>
         <div>
-          <span>今日天气</span>
-          <strong>{{ weather.weather }} · {{ weather.temperature }}</strong>
-        </div>
-        <div>
           <span>课程数量</span>
           <strong>{{ visibleCourses.length }}</strong>
         </div>
@@ -69,10 +65,6 @@ const props = defineProps({
   },
   courses: {
     type: Array,
-    required: true
-  },
-  weather: {
-    type: Object,
     required: true
   }
 })
