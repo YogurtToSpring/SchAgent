@@ -21,10 +21,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import uvicorn
+from student import router as student_router
+from course import router as course_router
+from teacher import router as teacher_router
+from admin import router as admin_router
+from room import router as room_router
+from class_stu import router as class_stu_router
 
 AGENT_API_BASE = "http://localhost:8000"
 
 app = FastAPI(title="SchAgent Backend", description="校园生活智能助手后端服务 - 异步代理层", version="2.0.0")
+
+app.include_router(student_router)
+app.include_router(course_router)
+app.include_router(teacher_router)
+app.include_router(admin_router)
+app.include_router(room_router)
+app.include_router(class_stu_router)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 

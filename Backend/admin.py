@@ -43,7 +43,7 @@ class PasswordChange(BaseModel):
     old_password: str
     new_password: str
 
-@router.post("/register")
+@router.post("/admin/register")
 def register(admin_data: AdminRegister):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
