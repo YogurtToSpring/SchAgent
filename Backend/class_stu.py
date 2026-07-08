@@ -78,22 +78,43 @@ def drop_course(req: DeleteEnrollRequest):
     finally:
         conn.close()
 
+STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
 
 @router.get("/class-stu/student/{stu_num}")
 def get_student_courses(stu_num: str):
     conn = get_conn()
+    conn_stu = sqlite3.connect(STUDENTS_DB)
+    conn_stu.row_factory = sqlite3.Row
+    corse = conn_stu.execute(
+        "SELECT * FROM students WHERE StuNum = ?", (stu_num,)
+    ).fetchone()
+    if not corse:
+        conn.close()
+        conn_stu.close()
+        raise HTTPException(status_code=404, detail=f"Student {stu_num} Not Found!")
     rows = conn.execute(
         "SELECT * FROM class_stu WHERE stu_num = ?", (stu_num,)).fetchall()
     conn.close()
+    conn_stu.close()
     return {"stu_num": stu_num, "courses": [dict(r) for r in rows], "count": len(rows)}
 
 
 @router.get("/class-stu/course/{course_id}")
 def get_course_students(course_id: int):
     conn = get_conn()
+    conn_course = sqlite3.connect(COURSE_DB)
+    conn_course.row_factory = sqlite3.Row
+    corse = conn_course.execute(
+        "SELECT * FROM course WHERE course_id = ?", (course_id,)
+    ).fetchone()
+    if not corse:
+        conn.close()
+        conn_course.close()
+        raise HTTPException(status_code=404, detail=f"Course {course_id} Not Found!")
     rows = conn.execute(
         "SELECT * FROM class_stu WHERE course_id = ?", (course_id,)).fetchall()
     conn.close()
+    conn_course.close()
     return {"course_id": course_id, "students": [dict(r) for r in rows], "count": len(rows)}
 
 
@@ -119,6 +140,16 @@ def get_student_course_details(stu_num: str):
     rows = conn.execute(
         "SELECT course_id FROM class_stu WHERE stu_num = ?", (stu_num,)).fetchall()
     conn.close()
+
+    conn_stu = sqlite3.connect(STUDENTS_DB)
+    conn_stu.row_factory = sqlite3.Row
+    corse = conn_stu.execute(
+        "SELECT * FROM students WHERE StuNum = ?", (stu_num,)
+    ).fetchone()
+    if not corse:
+        conn.close()
+        conn_stu.close()
+        raise HTTPException(status_code=404, detail=f"Student {stu_num} Not Found!")
 
     course_ids = [r["course_id"] for r in rows]
     if not course_ids:

@@ -214,18 +214,31 @@ def display_courses(course_id=None, day=None, start_time=None, end_time=None, co
 # ---- 老师查询所教课程及学生（跨库 JOIN）----
 CLASS_STU_DB = os.getenv("CLASS_STU_DB_PATH", "class_stu.db")
 STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
+TEACHER_DB = os.getenv("TEACHER_DB_PATH", "teacher.db")
 
 
 @router.get("/course/teacher/{teacher_name}/students")
-def get_teacher_students(teacher_name: str):
+def get_teacher_students(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
+    
+    cont = sqlite3.connect(TEACHER_DB)
+    cont.row_factory = sqlite3.Row
+    corse = cont.execute(
+        "SELECT * FROM teacher WHERE Number = ?", (teacher_num,)
+    ).fetchone()
+    if not corse:
+        conn.close()
+        cont.close()
+        raise HTTPException(status_code=404, detail=f"Teacher {teacher_num} Not Found!")
+    teacher_name = corse["Name"]
+
     courses = conn.execute(
         "SELECT * FROM course WHERE teacher_name = ?", (teacher_name,)).fetchall()
     conn.close()
 
     if not courses:
-        return {"teacher_name": teacher_name, "courses": [], "count": 0}
+        return {"teacher_num": teacher_num, "courses": [], "count": 0}
 
     conn2 = sqlite3.connect(CLASS_STU_DB)
     conn2.row_factory = sqlite3.Row
@@ -263,10 +276,19 @@ def get_teacher_students(teacher_name: str):
         course_dict["students"] = students
         result.append(course_dict)
 
-    return {"teacher_name": teacher_name, "courses": result, "count": len(result)}
+    return {"teacher_name": teacher_name, "teacher_num": teacher_num, "courses": result, "count": len(result)}
 
 @router.get("/course/free-room")
 def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, building: str, roomid: str):
+    connr = sqlite3.connect("room.db")
+    connr.row_factory = sqlite3.Row
+    rm = connr.execute(
+        "SELECT * FROM room WHERE area = ? AND building = ? AND room_id = ?", (area, building, roomid)
+    ).fetchone()
+    if not rm:
+        connr.close()
+        raise HTTPException(status_code=404, detail="Room Not Found")
+    connr.close()
     room = area + '-' + building + '-' + roomid
     conn1 = sqlite3.connect(DATABASE)
     conn1.row_factory = sqlite3.Row
