@@ -49,6 +49,8 @@ class PasswordChange(BaseModel):
     old_password: str
     new_password: str
 
+# 注册端口在演示时封死，仅在我们内部开发人员填充数据库时调用
+# 可以暴露给admin，让admin手动注册
 @router.post("/students/register")
 def register(student_data: StudentRegister):
     conn = sqlite3.connect(DATABASE)
@@ -69,6 +71,7 @@ def register(student_data: StudentRegister):
     
     return {"message": f"Student {student_data.Name} registered successfully!"}
 
+# 此登陆端口对student开放，传入学号和密码
 @router.post("/students/login")
 def login(student_data: StudentLogin):
     conn = sqlite3.connect(DATABASE)
@@ -85,6 +88,8 @@ def login(student_data: StudentLogin):
     conn.close()
     return {"message": f"Student {row["Name"]} login successfully!"}
 
+# 此端口不对外开放，仅在内部开发人员查看数据库时调用
+# 可以提供给admin作为参看
 @router.get("/students")
 def list_students():
     conn = sqlite3.connect(DATABASE)
@@ -93,6 +98,8 @@ def list_students():
     conn.close()
     return {"students": [dict(row) for row in rows]}
 
+# 此端口不对外开放，仅在内部开发人员查看数据库时调用
+# 可以提供给admin作为增删改查，同register
 @router.delete("/students/delete")
 def delete_student(student_id: str):
     conn = sqlite3.connect(DATABASE)
@@ -109,7 +116,8 @@ def delete_student(student_id: str):
     conn.close()    
     return {"message": f"Student {student_id} deleted successfully"}
 
-
+# 此端口不可暴露给student和teacher，仅暴露给admin
+# admin有权限修改所有学生的班级信息，此处建议加上确认提示
 @router.patch("/students/{student_id}/Cls")
 def change_cls(student_id: str, newcls: str):
     conn = sqlite3.connect(DATABASE)
@@ -119,6 +127,18 @@ def change_cls(student_id: str, newcls: str):
     if not student:
         conn.close()
         raise HTTPException(status_code=404, detail="Student does not exist")
+    
+    class_conn = sqlite3.connect("classi.db")
+    class_conn.row_factory = sqlite3.Row
+    cls = class_conn.execute(
+        "SELECT * FROM classi WHERE class_id = ?", (newcls,)
+    ).fetchone()
+    class_conn.close()
+    if not cls:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Class Not Found")
+
+
     if student["Cls"] == newcls:
         conn.close()
         raise HTTPException(status_code=400, detail="Class number had not been changed")
@@ -132,6 +152,8 @@ def change_cls(student_id: str, newcls: str):
 
     return {"message": "class changed successfully"}
 
+# 此修改密码端口，仅对student开放，前端使用新密码与旧密码的端口
+# student_num不应该暴露给用户，在发送请求时自动导入当前登录账号的student_num（学号）
 @router.put("/students/{student_num}/password")
 def change_password(student_num: str, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)

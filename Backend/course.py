@@ -23,7 +23,7 @@ def init_db():
             start_time TEXT NOT NULL,
             end_time TEXT NOT NULL,
             course_name TEXT NOT NULL,
-            teacher_name TEXT NOT NULL,
+            teacher_num TEXT NOT NULL,
             room_id TEXT,
             week_start INTEGER NOT NULL,
             week_end INTEGER NOT NULL,
@@ -41,12 +41,15 @@ class Corse(BaseModel):
     start_time: str
     end_time: str
     course_name: str
-    teacher_name: str
+    teacher_num: str
     room_id: str
     week_start: int
     week_end: int
     semester: str
 
+# 内部开发人员注入数据库接口
+# 仅admin可添加课程
+# 添加要求上课地点存在，老师存在（前提数据库搭建依赖关系）
 @router.post("/course/add")
 def addcourse(course_data: Corse):
     conn = sqlite3.connect(DATABASE)
@@ -74,16 +77,16 @@ def addcourse(course_data: Corse):
     tea_conn = sqlite3.connect("teacher.db")
     tea_conn.row_factory = sqlite3.Row
     teach = tea_conn.execute(
-        "SELECT * FROM teacher WHERE Name = ?", (course_data.teacher_name,)
+        "SELECT * FROM teacher WHERE Number = ?", (course_data.teacher_num,)
     ).fetchone()
     tea_conn.close()
     if not teach:
         conn.close()
-        raise HTTPException(status_code=404, detail=f"Teacher {course_data.teacher_name} Not Found")
+        raise HTTPException(status_code=404, detail=f"Teacher {course_data.teacher_num} Not Found")
 
     conn.execute(
-        "INSERT INTO course (course_id, day, start_time, end_time, course_name, teacher_name, room_id, week_start, week_end, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (course_data.course_id, course_data.day, course_data.start_time, course_data.end_time, course_data.course_name, course_data.teacher_name, course_data.room_id, course_data.week_start, course_data.week_end, course_data.semester)
+        "INSERT INTO course (course_id, day, start_time, end_time, course_name, teacher_num, room_id, week_start, week_end, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (course_data.course_id, course_data.day, course_data.start_time, course_data.end_time, course_data.course_name, course_data.teacher_num, course_data.room_id, course_data.week_start, course_data.week_end, course_data.semester)
     )
 
     conn.commit()
@@ -91,6 +94,30 @@ def addcourse(course_data: Corse):
 
     return {"message": f"Course {course_data.course_id} added successfully"}
 
+# 仅提供老师的接口，为老师实现立即查看自己的所有课程信息的功能，以便下个函数提供修改接口
+@router.get("/course/teacher")
+def teacher_course(teacher_num: str):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    cont = sqlite3.connect("teacher.db")
+    cont.row_factory = sqlite3.Row
+    tea = cont.execute(
+        "SELECT * FROM teacher WHERE Number = ?", (teacher_num,)
+    ).fetchone()
+    cont.close()
+    if not tea:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Teacher {teacher_num} Not Found")
+
+    rows = conn.execute(
+        "SELECT * FROM course WHERE teacher_num = ?", (teacher_num,)
+    ).fetchall()
+    conn.close()
+    return {"teacher_num ": teacher_num, "Course": [dict(row) for row in rows], "count": len(rows)}
+
+# 内部开发人员注入数据库接口
+# 仅admin可修改所有课程，对于admin的界面可以使用display函数（后面），teacher仅可修改自己的课程，这里是可视化的传参
+# 修改要求上课地点存在，老师存在（前提数据库搭建依赖关系）
 @router.patch("/course/{course_id}/info")
 def change_info(course_id: str, newinfo: Corse):
     conn = sqlite3.connect(DATABASE)
@@ -104,12 +131,12 @@ def change_info(course_id: str, newinfo: Corse):
     tea_conn = sqlite3.connect("teacher.db")
     tea_conn.row_factory = sqlite3.Row
     teach = tea_conn.execute(
-        "SELECT * FROM teacher WHERE Name = ?", (newinfo.teacher_name,)
+        "SELECT * FROM teacher WHERE Number = ?", (newinfo.teacher_num,)
     ).fetchone()
     tea_conn.close()
     if not teach:
         conn.close()
-        raise HTTPException(status_code=404, detail=f"Teacher {newinfo.teacher_name} Not Found")
+        raise HTTPException(status_code=404, detail=f"Teacher {newinfo.teacher_num} Not Found")
 
     parts = newinfo.room_id.split("-")
     if len(parts) != 3:
@@ -131,7 +158,7 @@ def change_info(course_id: str, newinfo: Corse):
            start_time = ?,
            end_time = ?,
            course_name = ?,
-          teacher_name = ?,
+          teacher_num = ?,
            room_id = ?,
           week_start = ?,
            week_end = ?,
@@ -142,7 +169,7 @@ def change_info(course_id: str, newinfo: Corse):
         newinfo.start_time,
         newinfo.end_time,
         newinfo.course_name,
-        newinfo.teacher_name,
+        newinfo.teacher_num,
         newinfo.room_id,
         newinfo.week_start,
         newinfo.week_end,
@@ -155,6 +182,8 @@ def change_info(course_id: str, newinfo: Corse):
 
     return {"message": f"Course {course_id} info had been changed successfully"}
 
+# 内部开发人员注入数据库接口
+# 仅admin可删除课程
 @router.delete("/course/delete")
 def delete_course(course_id: str):
     conn = sqlite3.connect(DATABASE)
@@ -177,6 +206,7 @@ def delete_course(course_id: str):
 
     return {"message": "Course deleted successfully"}
 
+# 全体用户可查看
 @router.get("/course")
 def list_all():
     conn = sqlite3.connect(DATABASE)
@@ -187,10 +217,9 @@ def list_all():
     conn.close()
     return {"Courses": [dict(row) for row in rows], "count": len(rows)}
 
-
-# ---- display 函数 ----
+# 全体用户可查看
 @router.get("/course/display")
-def display_courses(course_id=None, day=None, start_time=None, end_time=None, course_name=None, teacher_name=None, room_id=None, week_start=None, week_end=None, semester=None):
+def display_courses(course_id=None, day=None, start_time=None, end_time=None, course_name=None, teacher_num=None, room_id=None, week_start=None, week_end=None, semester=None):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     query = "SELECT * FROM course WHERE 1=1"
@@ -210,9 +239,9 @@ def display_courses(course_id=None, day=None, start_time=None, end_time=None, co
     if course_name is not None:
         query += " AND course_name LIKE ?"
         params.append(f"%{course_name}%")
-    if teacher_name is not None:
-        query += " AND teacher_name LIKE ?"
-        params.append(f"%{teacher_name}%")
+    if teacher_num is not None:
+        query += " AND teacher_num LIKE ?"
+        params.append(f"%{teacher_num}%")
     if room_id is not None:
         query += " AND room_id = ?"
         params.append(room_id)
@@ -230,13 +259,37 @@ def display_courses(course_id=None, day=None, start_time=None, end_time=None, co
     conn.close()
     return {"courses": [dict(r) for r in rows], "count": len(rows)}
 
+# 老师查询自己的课头号，开放给teacher和admin
+@router.get("/course/teacher/course_id")
+def get_teacher_course(teacher_num: str):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    
+    cont = sqlite3.connect(TEACHER_DB)
+    cont.row_factory = sqlite3.Row
+    corse = cont.execute(
+        "SELECT * FROM teacher WHERE Number = ?", (teacher_num,)
+    ).fetchone()
+    if not corse:
+        conn.close()
+        cont.close()
+        raise HTTPException(status_code=404, detail=f"Teacher {teacher_num} Not Found!")
 
-# ---- 老师查询所教课程及学生（跨库 JOIN）----
+    rows = conn.execute(
+        "SELECT * FROM course WHERE teacher_num = ?", (teacher_num,)
+    ).fetchall()
+
+    conn.close()
+    return {"message": [row["course_id"] for row in rows], "count": len(rows)}
+
 CLASS_STU_DB = os.getenv("CLASS_STU_DB_PATH", "class_stu.db")
 STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
 TEACHER_DB = os.getenv("TEACHER_DB_PATH", "teacher.db")
 
-
+# 老师查询所教课程及学生
+# 仅为老师提供此接口，teacher_num为固定传参，自动导入，没有填充信息
+# admin可以查询所有老师（只要存在）的课程信息和教授学生
+# 功能上与前面的/course/teacher有点相似，只是细化到学生了
 @router.get("/course/teacher/{teacher_num}/students")
 def get_teacher_students(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
@@ -254,7 +307,7 @@ def get_teacher_students(teacher_num: str):
     teacher_name = corse["Name"]
 
     courses = conn.execute(
-        "SELECT * FROM course WHERE teacher_name = ?", (teacher_name,)).fetchall()
+        "SELECT * FROM course WHERE teacher_num = ?", (teacher_num,)).fetchall()
     conn.close()
 
     if not courses:
@@ -302,8 +355,10 @@ def time_to_minutes(time_str: str) -> int:
     hours, minutes = map(int, time_str.split(':'))
     return hours * 60 + minutes
 
+# 查询空闲教室，需要手动填充第几周，周几（day），起始和终止时间，教学楼信息
+# 面向所有用户开放
 @router.get("/course/free-room")
-def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, building: str, roomid: str):
+def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, building: str, roomid: str, semester: str):
     connr = sqlite3.connect("room.db")
     connr.row_factory = sqlite3.Row
     rm = connr.execute(
@@ -317,7 +372,7 @@ def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, bu
     conn1 = sqlite3.connect(DATABASE)
     conn1.row_factory = sqlite3.Row
     rows = conn1.execute(
-        "SELECT * FROM course WHERE room_id = ? AND day = ?", (room, day)
+        "SELECT * FROM course WHERE room_id = ? AND day = ? AND semester = ?", (room, day, semester)
     ).fetchall()
 
     st_int = time_to_minutes(st_time)
@@ -327,7 +382,7 @@ def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, bu
         if r["week_start"] <= int(week) and r["week_end"] >= int(week):
             if (time_to_minutes(r["start_time"]) <= st_int and time_to_minutes(r["end_time"]) > st_int) or (time_to_minutes(r["start_time"]) < ed_int and time_to_minutes(r["end_time"]) >= ed_int) or (time_to_minutes(r["start_time"]) >= st_int and time_to_minutes(r["end_time"]) <= ed_int):
                 conn1.close()
-                raise HTTPException(status_code=400, detail=f"Conflict caused! {display_courses(r["course_id"], r["day"], r["start_time"])}  |  Selected time is not free")
+                raise HTTPException(status_code=400, detail=f"Conflict caused! {display_courses(r["course_id"], r["day"], r["start_time"], r["end_time"])}  |  Selected time is not free")
             
     conn1.close()
     return {"message": f"Time permitted at {room}. Enjoy your time"}

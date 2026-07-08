@@ -46,6 +46,8 @@ class ModClass(BaseModel):
     master_id: str
     capacity: int
 
+# 添加端口在演示时封死，仅在我们内部开发人员填充数据库时调用
+# 仅管理员admin可添加，teacher可以向admin发出请求（此处实现可能较复杂--关于通信处理）
 @router.post("/classi/add")
 def add_class(class_data: AddClass):
     conn = get_conn()
@@ -67,6 +69,7 @@ def add_class(class_data: AddClass):
 
     return {"message": f"Class {class_data.class_id} added successfully"}
 
+# 仅admin可修改班级信息，班级编号时不可变的，但名字可以变，班主任可以变（用编号映射改变），容量可以变（人数）
 @router.patch("/classi/{class_id}/info")
 def change_info(class_id: str, newinfo: ModClass):
     conn = get_conn()
@@ -78,6 +81,16 @@ def change_info(class_id: str, newinfo: ModClass):
         conn.close()
         raise HTTPException(status_code=400, detail=f"Class {class_id} does not exist")    
 
+    tea_conn = sqlite3.connect("teacher.db")
+    tea_conn.row_factory = sqlite3.Row
+    teach = tea_conn.execute(
+        "SELECT * FROM teacher WHERE Number = ?", (newinfo.master_id,)
+    ).fetchone()
+    tea_conn.close()
+    if not teach:
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Teacher {newinfo.master_id} Not Found")
+
     conn.execute(
         """UPDATE classi SET name = ?, master_id = ?, capacity = ? WHERE class_id = ?""",
         (newinfo.name, newinfo.master_id, newinfo.capacity, class_id)
@@ -87,6 +100,7 @@ def change_info(class_id: str, newinfo: ModClass):
 
     return {"message": f"Class {class_id} had been modified successfully"}
 
+# 仅admin可删除班级（例如毕业班）
 @router.delete("/classi/delete")
 def delete_class(class_id: str):
     conn = get_conn()
@@ -108,6 +122,8 @@ def delete_class(class_id: str):
 
     return {"message": "Class deleted successfully"}
 
+# 用于查看班级，用于数据库调试
+# admin可查看
 @router.get("/classi")
 def list_all():
     conn = get_conn()
@@ -119,6 +135,9 @@ def list_all():
     conn.close()
     return {"Classes": [dict(row) for row in rows], "count": len(rows)}
 
+# 通过给出班级的名字，查询班级的所有信息
+# student和teacher不用查询按钮接口，直接能看自己班级的信息
+# admin需要查询接口，能看所有信息
 @router.get("/classi/info")
 def get_class_info_by_name(cls_name: str):
     conn = get_conn()

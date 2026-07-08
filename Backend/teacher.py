@@ -47,6 +47,8 @@ class PasswordChange(BaseModel):
     old_password: str
     new_password: str
 
+# 注册端口在演示时封死，仅在我们内部开发人员填充数据库时调用
+# 可以暴露给admin，让admin手动注册
 @router.post("/teacher/register")
 def register(teacher_data: TeacherRegister):
     conn = sqlite3.connect(DATABASE)
@@ -67,6 +69,7 @@ def register(teacher_data: TeacherRegister):
     
     return {"message": f"Teacher {teacher_data.Name} registered successfully!"}
 
+# 此登陆端口对teacher开放，传入工号和密码
 @router.post("/teacher/login")
 def login(teacher_data: TeacherLogin):
     conn = sqlite3.connect(DATABASE)
@@ -83,6 +86,8 @@ def login(teacher_data: TeacherLogin):
     conn.close()
     return {"message": f"Teacher {row["Name"]} login successfully!"}
 
+# 此端口不对外开放，仅在内部开发人员查看数据库时调用
+# 可以提供给admin作为参看
 @router.get("/teacher")
 def list_teacher():
     conn = sqlite3.connect(DATABASE)
@@ -91,6 +96,8 @@ def list_teacher():
     conn.close()
     return {"teacher": [dict(row) for row in rows]}
 
+# 此端口不对外开放，仅在内部开发人员查看数据库时调用
+# 可以提供给admin作为增删改查，同register
 @router.delete("/teacher/delete")
 def delete_teacher(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
@@ -107,6 +114,8 @@ def delete_teacher(teacher_num: str):
     conn.close()    
     return {"message": f"teacher {teacher_num} deleted successfully"}
 
+# 此修改密码端口，仅对teacher开放，前端使用新密码与旧密码的端口
+# teacher_num不应该暴露给用户，在发送请求时自动导入当前登录账号的teacher_num（工号）
 @router.put("/teacher/{teacher_num}/password")
 def change_password(teacher_num: str, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)

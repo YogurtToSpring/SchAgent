@@ -1,3 +1,11 @@
+"""
+    declaration: Tips for room database
+        This so-called room could be made just as "智慧珞珈".
+        Room includes area, building, room_id, which synthetically integrates into so-called "3区1教301"
+        To store in another way, we use this format "area-building-room_id", which can be interpreted as "3-1-301", same as "3区1教301"
+        And this way of storage will be used in course module.
+"""
+
 from fastapi import FastAPI, HTTPException, APIRouter
 from pydantic import BaseModel
 import sqlite3
@@ -35,6 +43,7 @@ class roomReg(BaseModel):
     room_id: str
     capacity: str
 
+# 不提供接口，仅填充数据库时使用
 @router.post("/room/add")
 def addroom(room_data: roomReg):
     conn = sqlite3.connect(DATABASE)
@@ -57,6 +66,7 @@ def addroom(room_data: roomReg):
 
     return {"message": f"Room {room_data.area}区{room_data.building}教{room_data.room_id} added successfully"}
 
+# 提供给所有人这个接口，让所有用户都可以查看教室
 @router.get("/room")
 def list_rooms():
     conn = sqlite3.connect(DATABASE)

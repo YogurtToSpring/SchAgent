@@ -47,6 +47,7 @@ class PasswordChange(BaseModel):
     old_password: str
     new_password: str
 
+# 注册端口在演示时封死，仅在我们内部开发人员填充数据库时调用
 @router.post("/admin/register")
 def register(admin_data: AdminRegister):
     conn = sqlite3.connect(DATABASE)
@@ -67,6 +68,7 @@ def register(admin_data: AdminRegister):
     
     return {"message": f"Admin {admin_data.Name} registered successfully!"}
 
+# 此登陆端口对admin开放，传入工号和密码
 @router.post("/admin/login")
 def login(admin_data: AdminLogin):
     conn = sqlite3.connect(DATABASE)
@@ -83,7 +85,7 @@ def login(admin_data: AdminLogin):
     conn.close()
     return {"message": f"Admin {row["Name"]} login successfully!"}
 
-
+# 此端口不对外开放，仅在内部开发人员查看数据库时调用
 @router.get("/admin")
 def list_admin():
     conn = sqlite3.connect(DATABASE)
@@ -92,6 +94,8 @@ def list_admin():
     conn.close()
     return {"admin": [dict(row) for row in rows]}
 
+# 此修改密码端口，仅对admin开放，前端使用新密码与旧密码的端口
+# admin_id不应该暴露给用户，在发送请求时自动导入当前登录账号的admin_id（工号）
 @router.put("/admin/{admin_id}/password")
 def change_password(admin_id: str, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)
