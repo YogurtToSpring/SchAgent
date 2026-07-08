@@ -41,11 +41,18 @@ API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-0a79b44b052a4e7189c35c09b04040fb")
 MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 BACKEND_API_BASE = os.getenv("SCHAGENT_BACKEND_URL", "http://localhost:8080")
 
-SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。你可以使用以下工具：
+SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。
+与用户对话时务必保持严格的Markdown格式输出，前端会将你的回答直接渲染为网页内容。
+对话/生成的PDF中尽量不要使用emoji表情。
+为避免前端渲染出错，需要使用****着重强调的内容时，请保持星号前后有空格。
+为避免前端渲染出错，需要绘制表格时，请保持表格前后有空行。
+请遵循以下规则：
+你可以使用以下工具：
 
 通用工具：
 - get_weather: 查询城市天气
 - calculator: 安全地执行数学计算
+- query_day_of_week: 查询指定日期是星期几
 - get_current_time: 获取当前日期和时间
 - read_file: 读取工作区中的文件
 - write_file: 将内容写入工作区文件
@@ -57,7 +64,7 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 
 校园信息查询工具（从学校数据库获取真实数据）：
 - query_student_schedule: 查询学生个人课表（按学号 + 可选星期几）
-- query_course_info: 多条件查询课程信息（可按课程名、老师、星期、教室筛选）
+- query_course_info: 多条件查询课程信息（可按课程编号、课程名、老师、星期、时间、教室、周次、学期等组合筛选）
 - query_class_students: 查询班级学生名单（按班级名称）
 - query_student_info: 查询学生个人信息（按姓名或学号）
 - query_room_info: 查询教室信息（按教室编号、区域、楼栋）
@@ -228,6 +235,22 @@ def get_weather(city: str) -> str:
 
     return "\n".join(lines)
 
+
+
+@tool
+def query_day_of_week(date_str: str) -> str:
+    """查询指定日期是星期几。参数 date_str 为日期字符串，支持 'YYYY-MM-DD' 或 'YYYY/MM/DD' 格式。"""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        try:
+            date_obj = datetime.strptime(date_str, "%Y/%m/%d")
+        except ValueError:
+            return "日期格式错误，请使用 'YYYY-MM-DD' 或 'YYYY/MM/DD' 格式。"
+
+    weekday = date_obj.isoweekday()  # 1=周一, 7=周日
+    day_names = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    return f"{date_str} 是 {day_names[weekday]}。"
 
 @tool
 def calculator(expression: str) -> str:
@@ -489,23 +512,44 @@ def query_student_schedule(stu_num: str, day_of_week: Optional[int] = None) -> s
 
 @tool
 def query_course_info(
+    course_id: Optional[str] = None,
     course_name: Optional[str] = None,
     teacher_name: Optional[str] = None,
     day_of_week: Optional[int] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
     room_id: Optional[str] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    semester: Optional[str] = None,
 ) -> str:
-    """查询课程信息，支持多条件筛选。参数全部可选：
-    course_name 课程名（模糊匹配），teacher_name 老师名（模糊匹配），
-    day_of_week 星期几（1-7），room_id 教室编号（如 '3-3-201'）。"""
-    params = {}
+    """查询课程信息，支持多条件组合筛选。参数全部可选：
+    course_id 课程编号（精确匹配，如 'CS101'），course_name 课程名（模糊匹配），
+    teacher_name 老师名（模糊匹配），day_of_week 星期几（1-7），
+    start_time 开始时间（如 '08:00'），end_time 结束时间（如 '09:30'），
+    room_id 教室编号（如 '3-3-201'），week_start 起始周（整数），
+    week_end 结束周（整数），semester 学期（如 '2024-2025-1'）。"""
+    params: Dict[str, Any] = {}
+    if course_id:
+        params["course_id"] = course_id
     if course_name:
         params["course_name"] = course_name
     if teacher_name:
         params["teacher_name"] = teacher_name
     if day_of_week is not None:
         params["day"] = day_of_week
+    if start_time:
+        params["start_time"] = start_time
+    if end_time:
+        params["end_time"] = end_time
     if room_id:
         params["room_id"] = room_id
+    if week_start is not None:
+        params["week_start"] = week_start
+    if week_end is not None:
+        params["week_end"] = week_end
+    if semester:
+        params["semester"] = semester
 
     try:
         resp = requests.get(
@@ -531,7 +575,7 @@ def query_course_info(
         d = c.get("day", 0)
         day_str = DAY_NAMES[d] if 1 <= d <= 7 else f"星期{d}"
         lines.append(
-            f"  • {c.get('course_name', '未知')} | "
+            f"  • [{c.get('course_id', '?')}] {c.get('course_name', '未知')} | "
             f"{day_str} {c.get('start_time', '?')}-{c.get('end_time', '?')} | "
             f"👨‍🏫 {c.get('teacher_name', '未知')} | "
             f"📍 {c.get('room_id', '未知')} | "
@@ -881,7 +925,7 @@ def query_all_enrollments() -> str:
 checkpointer = MemorySaver()
 
 tools = [
-    get_weather, calculator, get_current_time,
+    get_weather, calculator, query_day_of_week, get_current_time,
     list_files, read_file, write_file,
     save_memory, recall_memory,
     markdown_to_html, markdown_to_pdf,
@@ -1035,7 +1079,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
                 if not reasoning:
                     reasoning = getattr(chunk, "reasoning_content", None)
 
-                if reasoning and isinstance(reasoning, str) and reasoning.strip():
+                if reasoning and isinstance(reasoning, str):
                     yield {"event": "token", "data": {"content": reasoning, "phase": "reasoning"}}
 
                 # --- 提取正文 content ---
@@ -1046,7 +1090,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
                         for b in chunk_content
                     )
 
-                if chunk_content and isinstance(chunk_content, str) and chunk_content.strip():
+                if chunk_content and isinstance(chunk_content, str):
                     if phase == "reasoning" and not has_pending_tools:
                         phase = "responding"
                         yield {"event": "status", "data": {"phase": "responding", "message": "正在生成回复..."}}
