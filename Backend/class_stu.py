@@ -47,6 +47,28 @@ class DeleteEnrollRequest(BaseModel):
 @router.post("/class-stu/enroll")
 def enroll(req: EnrollRequest):
     conn = get_conn()
+    conn1 = sqlite3.connect(STUDENTS_DB)
+    conn1.row_factory = sqlite3.Row
+    stu = conn1.execute(
+        "SELECT * FROM students WHERE StuNum = ?", (req.stu_num,)
+    ).fetchone()
+    if not stu:
+        conn.close()
+        conn1.close()
+        raise HTTPException(status_code=404, detail="Student Not Found")
+    conn1.close()
+
+    conn2 = sqlite3.connect(COURSE_DB)
+    conn2.row_factory = sqlite3.Row
+    cor = conn2.execute(
+        "SELECT * FROM course WHERE course_id = ?", (req.course_id,)
+    ).fetchone()
+    if not cor:
+        conn.close()
+        conn2.close()
+        raise HTTPException(status_code=404, detail="Course Not Found")
+    conn2.close()
+
     try:
         existing = conn.execute(
             "SELECT id FROM class_stu WHERE course_id = ? AND stu_num = ?",
@@ -126,13 +148,7 @@ def list_all():
     conn.close()
     return {"enrollments": [dict(r) for r in rows], "count": len(rows)}
 
-
-app.include_router(router)
-
-
-# ---- 学生查询完整课程详情（跨库 JOIN）----
 COURSE_DB = os.getenv("COURSE_DB_PATH", "course.db")
-
 
 @router.get("/class-stu/student/{stu_num}/details")
 def get_student_course_details(stu_num: str):
@@ -190,3 +206,5 @@ if __name__ == "__main__":
     import uvicorn
     print("class-stu API running on http://127.0.0.1:8001")
     uvicorn.run("class-stu:app", host="0.0.0.0", port=8001, reload=True)
+
+app.include_router(router)

@@ -88,6 +88,22 @@ def list_teacher():
     conn.close()
     return {"teacher": [dict(row) for row in rows]}
 
+@router.delete("/teacher/delete")
+def delete_teacher(teacher_id: str):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM teacher WHERE Number = ?", (teacher_id,)).fetchone()
+    if not rows:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Teacher does not exist")
+    conn.execute(
+        "DELETE FROM teacher WHERE Number = ?", (teacher_id,)
+    )
+
+    conn.commit()
+    conn.close()    
+    return {"message": f"teacher {teacher_id} deleted successfully"}
+
 @router.put("/teacher/{teacher_id}/password")
 def change_password(teacher_id: int, password_data: PasswordChange):
     conn = sqlite3.connect(DATABASE)

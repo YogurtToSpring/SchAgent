@@ -90,6 +90,23 @@ def list_students():
     conn.close()
     return {"students": [dict(row) for row in rows]}
 
+@router.delete("/students/delete")
+def delete_student(student_id: str):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM students WHERE StuNum = ?", (student_id,)).fetchone()
+    if not rows:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Student does not exist")
+    conn.execute(
+        "DELETE FROM students WHERE StuNum = ?", (student_id,)
+    )
+
+    conn.commit()
+    conn.close()    
+    return {"message": f"Student {student_id} deleted successfully"}
+
+
 @router.patch("/students/{student_id}/Cls")
 def change_cls(student_id: int, newcls: str):
     conn = sqlite3.connect(DATABASE)
