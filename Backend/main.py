@@ -82,6 +82,7 @@ class ChatResponse(BaseModel):
     steps: List[str] = []
     tool_calls: List[ToolCallInfo] = []
     artifacts: List[ArtifactItem] = []
+    files: List[dict] = []
     missing_fields: Optional[List[str]] = None
 
 TOOL_LABELS = {
@@ -115,6 +116,7 @@ async def call_agent_stream_collect(session_id: str, message: str, username: Opt
     collected_tokens = []
     collected_steps = []
     collected_tool_calls = []
+    collected_files = []
     final_session_id = session_id
     error_message = None
 
@@ -135,7 +137,7 @@ async def call_agent_stream_collect(session_id: str, message: str, username: Opt
                         data = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
-                    handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls)
+                    handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls, collected_files)
                     if event_type == "error":
                         error_message = data.get("message", "未知错误")
                     elif event_type == "done":
@@ -158,9 +160,9 @@ async def call_agent_stream_collect(session_id: str, message: str, username: Opt
         status = "success"
     if not collected_steps:
         collected_steps = ["正在理解任务...", "正在生成回答..."]
-    return ChatResponse(session_id=final_session_id, status=status, answer=full_answer, steps=collected_steps, tool_calls=collected_tool_calls)
+    return ChatResponse(session_id=final_session_id, status=status, answer=full_answer, steps=collected_steps, tool_calls=collected_tool_calls, files=collected_files)
 
-def handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls):
+def handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls, collected_files):
     """处理单个 SSE 事件"""
     if event_type == "status":
         phase = data.get("phase", "")
@@ -183,6 +185,14 @@ def handle_sse_event(event_type, data, collected_steps, collected_tokens, collec
         else:
             clean_args = str(args)[:200]
         collected_tool_calls.append({"tool": name, "label": label, "status": "success", "input": clean_args, "output": None})
+    elif event_type == "file_ready":
+        collected_files.append({
+            "name": data.get("name", ""),
+            "path": data.get("path", ""),
+            "size": data.get("size", 0),
+            "size_formatted": data.get("size_formatted", ""),
+            "modified_at": data.get("modified_at", ""),
+        })
     elif event_type == "tool_result":
         name = data.get("name", "")
         result = data.get("result", "")

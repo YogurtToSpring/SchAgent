@@ -14,6 +14,7 @@ SchAgent LangChain 核心模块
 """
 
 import os
+import re
 import json
 import math
 import requests
@@ -38,10 +39,11 @@ WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
 API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-0a79b44b052a4e7189c35c09b04040fb")
 MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+BACKEND_API_BASE = os.getenv("SCHAGENT_BACKEND_URL", "http://localhost:8080")
 
 SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。你可以使用以下工具：
 
-工具列表：
+通用工具：
 - get_weather: 查询城市天气
 - calculator: 安全地执行数学计算
 - get_current_time: 获取当前日期和时间
@@ -53,11 +55,19 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - markdown_to_html: 将 Markdown 文本转换为 HTML
 - markdown_to_pdf: 将 Markdown 文本转换为 PDF 文件
 
+校园信息查询工具（从学校数据库获取真实数据）：
+- query_student_schedule: 查询学生个人课表（按学号 + 可选星期几）
+- query_course_info: 多条件查询课程信息（可按课程名、老师、星期、教室筛选）
+- query_class_students: 查询班级学生名单（按班级名称）
+- query_student_info: 查询学生个人信息（按姓名或学号）
+- query_room_info: 查询教室信息（按教室编号、区域、楼栋）
+
 使用原则：
 1. 维护对话上下文，记住用户在当前会话中说过的信息
 2. 对于需要长期记住的信息（如课表），主动使用 save_memory 保存
-3. 如果不需要工具就直接回答
-4. 回答简洁、友好"""
+3. 对于课表、课程、班级、学生、教室等校园信息查询，必须使用对应的 query_ 系列工具从学校数据库获取准确数据，不要凭猜测回答
+4. 如果不需要工具就直接回答
+5. 回答简洁、友好"""
 
 
 # ============================================================
@@ -352,6 +362,235 @@ def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
 
 
 # ============================================================
+# 校园数据库查询工具（通过 Backend HTTP API）
+# ============================================================
+
+DAY_NAMES = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+
+
+@tool
+def query_student_schedule(stu_num: str, day_of_week: Optional[int] = None) -> str:
+    """查询学生的个人课表。参数 stu_num 为学号（如 '2024001'），
+    day_of_week 可选，为星期几（1=周一, 2=周二, ..., 7=周日），不传则返回整周课表。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/class-stu/student/{stu_num}/details",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询课表出错：{str(e)}"
+
+    courses = data.get("courses", [])
+    if not courses:
+        return f"学号为 {stu_num} 的同学暂无选课记录。"
+
+    # 按星期几筛选
+    if day_of_week is not None:
+        courses = [c for c in courses if c.get("day") == day_of_week]
+        if not courses:
+            return f"学号为 {stu_num} 的同学在{DAY_NAMES[day_of_week]}没有课程。"
+
+    # 按星期几分组
+    grouped = {}
+    for c in courses:
+        d = c.get("day", 0)
+        grouped.setdefault(d, []).append(c)
+
+    lines = [f"📅 学号 {stu_num} 的课表："]
+    for d in sorted(grouped.keys()):
+        lines.append(f"\n  {DAY_NAMES[d]}：")
+        for c in grouped[d]:
+            lines.append(
+                f"    📖 {c.get('course_name', '未知')} | "
+                f"⏰ {c.get('start_time', '?')}-{c.get('end_time', '?')} | "
+                f"📍 {c.get('room_id', '未知教室')} | "
+                f"👨‍🏫 {c.get('teacher_name', '未知')} | "
+                f"📆 第{c.get('week_start', '?')}-{c.get('week_end', '?')}周"
+            )
+    return "\n".join(lines)
+
+
+@tool
+def query_course_info(
+    course_name: Optional[str] = None,
+    teacher_name: Optional[str] = None,
+    day_of_week: Optional[int] = None,
+    room_id: Optional[str] = None,
+) -> str:
+    """查询课程信息，支持多条件筛选。参数全部可选：
+    course_name 课程名（模糊匹配），teacher_name 老师名（模糊匹配），
+    day_of_week 星期几（1-7），room_id 教室编号（如 '3-3-201'）。"""
+    params = {}
+    if course_name:
+        params["course_name"] = course_name
+    if teacher_name:
+        params["teacher_name"] = teacher_name
+    if day_of_week is not None:
+        params["day"] = day_of_week
+    if room_id:
+        params["room_id"] = room_id
+
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/course/display",
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询课程出错：{str(e)}"
+
+    # 兼容不同后端返回的 key（Courses 或 courses）
+    courses = data.get("Courses", data.get("courses", []))
+    if not courses:
+        filters = ", ".join(f"{k}={v}" for k, v in params.items())
+        return f"未找到符合条件的课程（筛选条件：{filters or '无'}）。"
+
+    lines = [f"📚 查询结果（共 {len(courses)} 门课程）："]
+    for c in courses:
+        d = c.get("day", 0)
+        day_str = DAY_NAMES[d] if 1 <= d <= 7 else f"星期{d}"
+        lines.append(
+            f"  • {c.get('course_name', '未知')} | "
+            f"{day_str} {c.get('start_time', '?')}-{c.get('end_time', '?')} | "
+            f"👨‍🏫 {c.get('teacher_name', '未知')} | "
+            f"📍 {c.get('room_id', '未知')} | "
+            f"📆 第{c.get('week_start', '?')}-{c.get('week_end', '?')}周 | "
+            f"📝 {c.get('semester', '未知学期')}"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def query_class_students(class_name: str) -> str:
+    """查询指定班级的学生名单。参数 class_name 为班级名称（如 '软件工程1班' 或班级 ID）。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/students",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询班级学生出错：{str(e)}"
+
+    students = data.get("students", [])
+    if not students:
+        return "学校数据库中暂无学生数据。"
+
+    # 按班级名称筛选（支持中文名和 class-id 两种格式）
+    matched = [
+        s for s in students
+        if class_name in (s.get("Cls", "") or "")
+    ]
+    if not matched:
+        available = sorted(set(s.get("Cls", "未知") for s in students))
+        return f"未找到班级 '{class_name}' 的学生。数据库中的班级：{', '.join(available)}"
+
+    lines = [f"🏫 班级 '{class_name}' 学生名单（共 {len(matched)} 人）："]
+    for s in matched:
+        lines.append(f"  • {s.get('Name', '未知')}（学号：{s.get('StuNum', '未知')}）")
+    return "\n".join(lines)
+
+
+@tool
+def query_student_info(stu_name: Optional[str] = None, stu_num: Optional[str] = None) -> str:
+    """查询学生个人信息。参数 stu_name 学生姓名（模糊匹配），stu_num 学号（精确匹配），至少提供一个。"""
+    if not stu_name and not stu_num:
+        return "请至少提供学生姓名或学号中的一个条件。"
+
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/students",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询学生信息出错：{str(e)}"
+
+    students = data.get("students", [])
+    if not students:
+        return "学校数据库中暂无学生数据。"
+
+    matched = students
+    if stu_num:
+        matched = [s for s in matched if s.get("StuNum") == stu_num]
+    if stu_name:
+        matched = [s for s in matched if stu_name in (s.get("Name", "") or "")]
+
+    if not matched:
+        return "未找到匹配的学生信息。"
+
+    lines = [f"👤 学生信息查询结果（共 {len(matched)} 人）："]
+    for s in matched:
+        lines.append(
+            f"  • 姓名：{s.get('Name', '未知')} | "
+            f"学号：{s.get('StuNum', '未知')} | "
+            f"班级：{s.get('Cls', '未知')}"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def query_room_info(room_full: Optional[str] = None, area: Optional[str] = None, building: Optional[str] = None) -> str:
+    """查询教室信息。参数全部可选：
+    room_full 完整教室号（如 '3-3-201'），area 区域编号，building 楼栋编号。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/room",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询教室信息出错：{str(e)}"
+
+    rooms = data.get("rooms", [])
+    if not rooms:
+        return "学校数据库中暂无教室数据。"
+
+    matched = rooms
+    if room_full:
+        parts = room_full.split("-")
+        if len(parts) == 3:
+            matched = [
+                r for r in matched
+                if r.get("area") == parts[0]
+                and r.get("building") == parts[1]
+                and r.get("room_id") == parts[2]
+            ]
+        else:
+            matched = [r for r in matched if room_full in (r.get("room_full", "") or "")]
+    if area:
+        matched = [r for r in matched if r.get("area") == area]
+    if building:
+        matched = [r for r in matched if r.get("building") == building]
+
+    if not matched:
+        return "未找到匹配的教室信息。"
+
+    lines = [f"🏢 教室查询结果（共 {len(matched)} 间）："]
+    for r in matched:
+        full = r.get("room_full", f"{r.get('area', '?')}-{r.get('building', '?')}-{r.get('room_id', '?')}")
+        lines.append(f"  • {full} | 容量：{r.get('capacity', '未知')}人")
+    return "\n".join(lines)
+
+
+# ============================================================
 # 创建 Agent（带 LangGraph MemorySaver 自动记忆）
 # ============================================================
 
@@ -364,7 +603,9 @@ tools = [
     get_weather, calculator, get_current_time,
     list_files, read_file, write_file,
     save_memory, recall_memory,
-    markdown_to_html, markdown_to_pdf
+    markdown_to_html, markdown_to_pdf,
+    query_student_schedule, query_course_info, query_class_students,
+    query_student_info, query_room_info,
 ]
 
 llm = ChatDeepSeek(
@@ -512,6 +753,12 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
                 result_text = raw_output[:500] + "..." if len(raw_output) > 500 else raw_output
                 yield {"event": "tool_result", "data": {"name": tool_name, "result": result_text, "success": True}}
 
+                # ★ 检测文件生成工具，产出 file_ready 事件供前端渲染下载卡片
+                if tool_name in ("write_file", "markdown_to_pdf"):
+                    file_info = _extract_file_info(tool_name, raw_output)
+                    if file_info:
+                        yield {"event": "file_ready", "data": file_info}
+
                 # 回归 reasoning，等待 LLM 分析工具结果
                 phase = "reasoning"
                 has_pending_tools = False
@@ -583,6 +830,43 @@ def delete_user_memory(username: str, key: Optional[str] = None) -> Dict[str, An
     """删除用户长期记忆。不指定 key 则清空全部。"""
     memory_store.delete(username, key)
     return {"username": username, "key": key, "status": "deleted"}
+
+
+def _extract_file_info(tool_name: str, output: str) -> Optional[dict]:
+    """从工具输出中提取文件元数据，供 file_ready SSE 事件使用。
+
+    支持的输出格式：
+        write_file      → "已将内容写入文件：notes.txt"
+        markdown_to_pdf → "已将 Markdown 转换为 PDF: C:\\...\\workspace\\output.pdf"
+
+    Returns:
+        {"name", "path", "size", "size_formatted", "modified_at"} 或 None
+    """
+    file_path = None
+
+    if tool_name == "markdown_to_pdf":
+        match = re.search(r'PDF:\s*(.+)$', output)
+        if match:
+            file_path = Path(match.group(1).strip())
+
+    elif tool_name == "write_file":
+        match = re.search(r'写入文件[：:]\s*(.+)$', output)
+        if match:
+            file_path = (WORKSPACE_DIR / match.group(1).strip()).resolve()
+
+    if file_path and file_path.exists() and file_path.is_file():
+        # 安全检查：确保在工作区范围内
+        if not str(file_path.resolve()).startswith(str(WORKSPACE_DIR.resolve())):
+            return None
+        stat = file_path.stat()
+        return {
+            "name": file_path.name,
+            "path": str(file_path.relative_to(WORKSPACE_DIR)),
+            "size": stat.st_size,
+            "size_formatted": _format_size(stat.st_size),
+            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        }
+    return None
 
 
 def _format_size(size_bytes: int) -> str:
