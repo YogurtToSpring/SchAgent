@@ -41,11 +41,18 @@ API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-0a79b44b052a4e7189c35c09b04040fb")
 MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 BACKEND_API_BASE = os.getenv("SCHAGENT_BACKEND_URL", "http://localhost:8080")
 
-SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。你可以使用以下工具：
+SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。
+与用户对话时务必保持严格的Markdown格式输出，前端会将你的回答直接渲染为网页内容。
+对话/生成的PDF中尽量不要使用emoji表情。
+为避免前端渲染出错，需要使用****着重强调的内容时，请保持星号前后有空格。
+为避免前端渲染出错，需要绘制表格时，请保持表格前后有空行。
+请遵循以下规则：
+你可以使用以下工具：
 
 通用工具：
 - get_weather: 查询城市天气
 - calculator: 安全地执行数学计算
+- query_day_of_week: 查询指定日期是星期几
 - get_current_time: 获取当前日期和时间
 - read_file: 读取工作区中的文件
 - write_file: 将内容写入工作区文件
@@ -57,10 +64,15 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 
 校园信息查询工具（从学校数据库获取真实数据）：
 - query_student_schedule: 查询学生个人课表（按学号 + 可选星期几）
-- query_course_info: 多条件查询课程信息（可按课程名、老师、星期、教室筛选）
+- query_course_info: 多条件查询课程信息（可按课程编号、课程名、老师、星期、时间、教室、周次、学期等组合筛选）
 - query_class_students: 查询班级学生名单（按班级名称）
 - query_student_info: 查询学生个人信息（按姓名或学号）
 - query_room_info: 查询教室信息（按教室编号、区域、楼栋）
+- query_teacher_students: 查询教师所教课程及每门课的学生名单（按教师工号）
+- query_free_room: 检查指定教室在指定时间段是否空闲（按周次、星期、时间、教室）
+- query_course_students: 查询某课程的选课学生名单（按课程编号，含姓名班级）
+- query_all_teachers: 列出全校教师列表（姓名和工号）
+- query_all_enrollments: 列出全部选课记录（管理员全景视图）
 
 使用原则：
 1. 维护对话上下文，记住用户在当前会话中说过的信息
@@ -223,6 +235,22 @@ def get_weather(city: str) -> str:
 
     return "\n".join(lines)
 
+
+
+@tool
+def query_day_of_week(date_str: str) -> str:
+    """查询指定日期是星期几。参数 date_str 为日期字符串，支持 'YYYY-MM-DD' 或 'YYYY/MM/DD' 格式。"""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        try:
+            date_obj = datetime.strptime(date_str, "%Y/%m/%d")
+        except ValueError:
+            return "日期格式错误，请使用 'YYYY-MM-DD' 或 'YYYY/MM/DD' 格式。"
+
+    weekday = date_obj.isoweekday()  # 1=周一, 7=周日
+    day_names = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    return f"{date_str} 是 {day_names[weekday]}。"
 
 @tool
 def calculator(expression: str) -> str:
@@ -484,23 +512,44 @@ def query_student_schedule(stu_num: str, day_of_week: Optional[int] = None) -> s
 
 @tool
 def query_course_info(
+    course_id: Optional[str] = None,
     course_name: Optional[str] = None,
     teacher_name: Optional[str] = None,
     day_of_week: Optional[int] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
     room_id: Optional[str] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    semester: Optional[str] = None,
 ) -> str:
-    """查询课程信息，支持多条件筛选。参数全部可选：
-    course_name 课程名（模糊匹配），teacher_name 老师名（模糊匹配），
-    day_of_week 星期几（1-7），room_id 教室编号（如 '3-3-201'）。"""
-    params = {}
+    """查询课程信息，支持多条件组合筛选。参数全部可选：
+    course_id 课程编号（精确匹配，如 'CS101'），course_name 课程名（模糊匹配），
+    teacher_name 老师名（模糊匹配），day_of_week 星期几（1-7），
+    start_time 开始时间（如 '08:00'），end_time 结束时间（如 '09:30'），
+    room_id 教室编号（如 '3-3-201'），week_start 起始周（整数），
+    week_end 结束周（整数），semester 学期（如 '2024-2025-1'）。"""
+    params: Dict[str, Any] = {}
+    if course_id:
+        params["course_id"] = course_id
     if course_name:
         params["course_name"] = course_name
     if teacher_name:
         params["teacher_name"] = teacher_name
     if day_of_week is not None:
         params["day"] = day_of_week
+    if start_time:
+        params["start_time"] = start_time
+    if end_time:
+        params["end_time"] = end_time
     if room_id:
         params["room_id"] = room_id
+    if week_start is not None:
+        params["week_start"] = week_start
+    if week_end is not None:
+        params["week_end"] = week_end
+    if semester:
+        params["semester"] = semester
 
     try:
         resp = requests.get(
@@ -526,7 +575,7 @@ def query_course_info(
         d = c.get("day", 0)
         day_str = DAY_NAMES[d] if 1 <= d <= 7 else f"星期{d}"
         lines.append(
-            f"  • {c.get('course_name', '未知')} | "
+            f"  • [{c.get('course_id', '?')}] {c.get('course_name', '未知')} | "
             f"{day_str} {c.get('start_time', '?')}-{c.get('end_time', '?')} | "
             f"👨‍🏫 {c.get('teacher_name', '未知')} | "
             f"📍 {c.get('room_id', '未知')} | "
@@ -658,6 +707,214 @@ def query_room_info(room_full: Optional[str] = None, area: Optional[str] = None,
     return "\n".join(lines)
 
 
+@tool
+def query_teacher_students(teacher_num: str) -> str:
+    """查询教师所教课程及每门课的学生名单（跨库 JOIN）。参数 teacher_num 为教师工号。
+    适用于教师查看自己授课安排和学生情况，也适用于管理员进行教学管理。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/course/teacher/{teacher_num}/students",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return f"未找到工号为 {teacher_num} 的教师，请确认工号是否正确。"
+        return f"查询教师学生信息出错：{str(e)}"
+    except Exception as e:
+        return f"查询教师学生信息出错：{str(e)}"
+
+    courses = data.get("courses", [])
+    if not courses:
+        teacher_name = data.get("teacher_name", teacher_num)
+        return f"👨‍🏫 {teacher_name}（工号：{teacher_num}）目前没有授课安排。"
+
+    teacher_name = data.get("teacher_name", "未知")
+    lines = [f"👨‍🏫 {teacher_name}（工号：{teacher_num}）的授课情况（共 {data.get('count', len(courses))} 门课程）："]
+    for course in courses:
+        d = course.get("day", 0)
+        day_str = DAY_NAMES[d] if 1 <= d <= 7 else f"星期{d}"
+        lines.append(
+            f"\n  📖 {course.get('course_name', '未知')} | "
+            f"{day_str} {course.get('start_time', '?')}-{course.get('end_time', '?')} | "
+            f"📍 {course.get('room_id', '未知')} | "
+            f"📆 第{course.get('week_start', '?')}-{course.get('week_end', '?')}周"
+        )
+        students = course.get("students", [])
+        if students:
+            lines.append(f"    选课学生（共 {len(students)} 人）：")
+            for stu in students:
+                lines.append(
+                    f"      • {stu.get('name', '未知')}（学号：{stu.get('stu_num', '?')} | "
+                    f"班级：{stu.get('cls', '未知')}）"
+                )
+        else:
+            lines.append("    （暂无学生选课）")
+    return "\n".join(lines)
+
+
+@tool
+def query_free_room(
+    week: int,
+    day: int,
+    start_time: str,
+    end_time: str,
+    area: str,
+    building: str,
+    room_id: str,
+) -> str:
+    """检查指定教室在指定时间段是否空闲。参数：week 第几周（整数），day 星期几（1-7），
+    start_time 开始时间（如 '08:00'），end_time 结束时间（如 '09:30'），
+    area 区域编号（如 '3'），building 楼栋编号（如 '3'），room_id 教室号（如 '201'）。
+    适用于师生查询空闲自习室、调课排课等场景。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/course/free-room",
+            params={
+                "week": str(week),
+                "day": str(day),
+                "st_time": start_time,
+                "ed_time": end_time,
+                "area": area,
+                "building": building,
+                "roomid": room_id,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        room_full = f"{area}-{building}-{room_id}"
+        day_str = DAY_NAMES[day] if 1 <= day <= 7 else f"星期{day}"
+        return (
+            f"✅ 教室 {room_full} 在第{week}周 {day_str} "
+            f"{start_time}-{end_time} 时段空闲，可以使用。"
+        )
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 400:
+            # 400 表示时间冲突，提取后端返回的冲突详情
+            try:
+                detail = e.response.json().get("detail", str(e))
+            except Exception:
+                detail = str(e)
+            room_full = f"{area}-{building}-{room_id}"
+            day_str = DAY_NAMES[day] if 1 <= day <= 7 else f"星期{day}"
+            return (
+                f"❌ 教室 {room_full} 在第{week}周 {day_str} "
+                f"{start_time}-{end_time} 时段已被占用。\n"
+                f"详情：{detail}"
+            )
+        elif e.response.status_code == 404:
+            return f"未找到教室 {area}-{building}-{room_id}，请确认区域、楼栋和教室编号是否正确。"
+        return f"查询空闲教室出错：{str(e)}"
+    except Exception as e:
+        return f"查询空闲教室出错：{str(e)}"
+
+
+@tool
+def query_course_students(course_id: str) -> str:
+    """查询某课程的所有选课学生（含姓名和班级）。参数 course_id 为课程编号（如 'CS101'）。
+    适用于教师查看自己课程的学生名单、管理员进行教学统计等场景。"""
+    # 第一步：获取课程选课学生学号列表
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/class-stu/course/{course_id}",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return f"未找到课程编号为 {course_id} 的课程，请确认编号是否正确。"
+        return f"查询课程学生出错：{str(e)}"
+    except Exception as e:
+        return f"查询课程学生出错：{str(e)}"
+
+    stu_list = data.get("students", [])
+    if not stu_list:
+        return f"📖 课程 {course_id} 目前没有学生选课。"
+
+    # 第二步：获取所有学生信息，补全姓名和班级
+    stu_nums = [s["stu_num"] for s in stu_list]
+    try:
+        resp2 = requests.get(
+            f"{BACKEND_API_BASE}/api/students",
+            timeout=10,
+        )
+        resp2.raise_for_status()
+        all_students = resp2.json().get("students", [])
+        stu_map = {s["StuNum"]: s for s in all_students}
+    except Exception:
+        stu_map = {}
+
+    lines = [f"📖 课程 {course_id} 选课学生名单（共 {len(stu_list)} 人）："]
+    for s in stu_list:
+        snum = s["stu_num"]
+        info = stu_map.get(snum, {})
+        name = info.get("Name", "未知")
+        cls = info.get("Cls", "未知")
+        lines.append(f"  • {name}（学号：{snum} | 班级：{cls}）")
+    return "\n".join(lines)
+
+
+@tool
+def query_all_teachers() -> str:
+    """列出学校数据库中所有教师的基本信息（姓名和工号）。不需要任何参数。
+    适用于学生查找老师、管理员管理师资等场景。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/teacher",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询教师列表出错：{str(e)}"
+
+    teachers = data.get("teacher", [])
+    if not teachers:
+        return "学校数据库中暂无教师数据。"
+
+    lines = [f"👨‍🏫 教师列表（共 {len(teachers)} 人）："]
+    for t in teachers:
+        lines.append(f"  • {t.get('Name', '未知')}（工号：{t.get('Number', '未知')}）")
+    return "\n".join(lines)
+
+
+@tool
+def query_all_enrollments() -> str:
+    """列出学校数据库中所有选课记录（课程编号 + 学号）。不需要任何参数。
+    适用于管理员查看全景选课数据、统计分析等场景。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/class-stu",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询选课记录出错：{str(e)}"
+
+    enrollments = data.get("enrollments", [])
+    if not enrollments:
+        return "学校数据库中暂无选课记录。"
+
+    lines = [f"📋 全部选课记录（共 {len(enrollments)} 条）："]
+    for e in enrollments:
+        lines.append(f"  • 课程：{e.get('course_id', '?')} → 学生学号：{e.get('stu_num', '?')}")
+    return "\n".join(lines)
+
+
 # ============================================================
 # 创建 Agent（带 LangGraph MemorySaver 自动记忆）
 # ============================================================
@@ -668,12 +925,14 @@ def query_room_info(room_full: Optional[str] = None, area: Optional[str] = None,
 checkpointer = MemorySaver()
 
 tools = [
-    get_weather, calculator, get_current_time,
+    get_weather, calculator, query_day_of_week, get_current_time,
     list_files, read_file, write_file,
     save_memory, recall_memory,
     markdown_to_html, markdown_to_pdf,
     query_student_schedule, query_course_info, query_class_students,
     query_student_info, query_room_info,
+    query_teacher_students, query_free_room, query_course_students,
+    query_all_teachers, query_all_enrollments,
 ]
 
 llm = ChatDeepSeek(
@@ -820,7 +1079,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
                 if not reasoning:
                     reasoning = getattr(chunk, "reasoning_content", None)
 
-                if reasoning and isinstance(reasoning, str) and reasoning.strip():
+                if reasoning and isinstance(reasoning, str):
                     yield {"event": "token", "data": {"content": reasoning, "phase": "reasoning"}}
 
                 # --- 提取正文 content ---
@@ -831,7 +1090,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
                         for b in chunk_content
                     )
 
-                if chunk_content and isinstance(chunk_content, str) and chunk_content.strip():
+                if chunk_content and isinstance(chunk_content, str):
                     if phase == "reasoning" and not has_pending_tools:
                         phase = "responding"
                         yield {"event": "status", "data": {"phase": "responding", "message": "正在生成回复..."}}
