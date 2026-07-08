@@ -299,6 +299,12 @@ async function handleSend(text) {
             toolCalls.value[index] = { ...toolCalls.value[index], ...call }
           }
         },
+        onFileReady: artifact => {
+          patchAssistantMessage(assistantIndex, current => ({
+            artifacts: mergeMessageArtifacts(current.artifacts || [], [artifact]),
+            streamingStatus: '文件已生成，可下载'
+          }))
+        },
         onError: message => {
           patchAssistantMessage(assistantIndex, {
             content: message,
@@ -733,6 +739,22 @@ function formatCourseList(courses) {
 
 function limitItems(items, max) {
   return items.slice(0, max)
+}
+
+function mergeMessageArtifacts(current = [], next = []) {
+  const merged = [...current]
+  for (const artifact of next) {
+    const key = messageArtifactKey(artifact)
+    if (!merged.some(item => messageArtifactKey(item) === key)) {
+      merged.push(artifact)
+    }
+  }
+  return merged
+}
+
+function messageArtifactKey(artifact = {}) {
+  if (artifact.type === 'file') return `file:${artifact.name || artifact.path || artifact.url}`
+  return `${artifact.type}:${artifact.title || ''}`
 }
 
 function normalizeWeekdayIndex(index) {

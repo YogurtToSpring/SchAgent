@@ -1195,6 +1195,59 @@ select:focus {
   font-size: 14px;
 }
 
+.download-artifact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #d7dee4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.download-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  color: #40505c;
+}
+
+.download-meta div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.download-meta strong {
+  overflow: hidden;
+  color: #172026;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-meta span {
+  color: #72818b;
+  font-size: 12px;
+}
+
+.download-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #183642;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

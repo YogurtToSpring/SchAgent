@@ -22,6 +22,27 @@
           </tbody>
         </table>
       </div>
+
+      <div v-else-if="artifact.type === 'file'" class="download-artifact">
+        <div class="download-meta">
+          <Download :size="20" />
+          <div>
+            <strong>{{ artifact.name || artifact.title || '生成文件' }}</strong>
+            <span>{{ fileMeta(artifact) }}</span>
+          </div>
+        </div>
+        <a
+          v-if="artifact.url"
+          class="download-action"
+          :href="artifact.url"
+          :download="artifact.name || true"
+          target="_blank"
+          rel="noopener"
+        >
+          <Download :size="16" />
+          下载
+        </a>
+      </div>
     </section>
   </div>
 </template>
@@ -30,6 +51,7 @@
 import { computed } from 'vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import { Download } from 'lucide-vue-next'
 
 const props = defineProps({
   content: {
@@ -58,5 +80,21 @@ function normalizeMarkdownText(text) {
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, '  ')
     .trim()
+}
+
+function fileMeta(file) {
+  return [file.size_formatted, formatDate(file.modified_at)].filter(Boolean).join(' · ') || '可下载文件'
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 </script>
