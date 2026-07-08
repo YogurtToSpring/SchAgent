@@ -103,7 +103,7 @@ TOOL_LABELS = {
     "query_room_info": "教室查询",
 }
 
-async def call_agent_stream_collect(session_id: str, message: str, username: Optional[str] = None) -> ChatResponse:
+async def call_agent_stream_collect(session_id: str, message: str, username: Optional[str] = None, role: Optional[str] = None) -> ChatResponse:
     """
     调用 C 的 /chat/stream SSE 端点，收集所有事件，编译成前端期望的格式。
     这是 B 的核心翻译逻辑：
@@ -112,6 +112,8 @@ async def call_agent_stream_collect(session_id: str, message: str, username: Opt
     payload = {"session_id": session_id, "message": message}
     if username:
         payload["username"] = username
+    if role:
+        payload["role"] = role
 
     collected_tokens = []
     collected_steps = []
@@ -218,17 +220,21 @@ async def health():
 async def chat(request: ChatRequest):
     """对话接口 - 接收前端请求，调用 LangChain Agent，返回结构化响应"""
     username = request.user_context.name if request.user_context else None
+    role = request.user_context.role if request.user_context else None
     sid = request.session_id or str(uuid.uuid4())
-    return await call_agent_stream_collect(session_id=sid, message=request.message, username=username)
+    return await call_agent_stream_collect(session_id=sid, message=request.message, username=username, role=role)
 
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
     """SSE 流式对话 - 直接透传 LangChain Agent 的 SSE 事件"""
     username = request.user_context.name if request.user_context else None
+    role = request.user_context.role if request.user_context else None
     sid = request.session_id or str(uuid.uuid4())
     payload = {"session_id": sid, "message": request.message}
     if username:
         payload["username"] = username
+    if role:
+        payload["role"] = role
 
     async def sse_proxy():
         try:
