@@ -44,12 +44,9 @@ BACKEND_API_BASE = os.getenv("SCHAGENT_BACKEND_URL", "http://localhost:8080")
 SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。
 与用户对话时务必保持严格的Markdown格式输出，前端会将你的回答直接渲染为网页内容。
 对话/生成的PDF中尽量不要使用emoji表情。
-为避免前端渲染出错，需要使用****着重强调的内容时，请保持星号前后有空格。
-为避免前端渲染出错，需要绘制表格时，请保持表格前后有空行。
 请遵循以下规则：
-你可以使用以下工具：
 
-通用工具：
+## 通用工具：
 - get_weather: 查询城市天气
 - calculator: 安全地执行数学计算
 - query_day_of_week: 查询指定日期是星期几
@@ -61,8 +58,9 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - recall_memory: 读取用户的长期记忆
 - markdown_to_html: 将 Markdown 文本转换为 HTML
 - markdown_to_pdf: 将 Markdown 文本转换为 PDF 文件
+- use_python_pptx: 使用 python-pptx 库操作 PPTX 文件（创建/编辑幻灯片）
 
-校园信息查询工具（从学校数据库获取真实数据）：
+## 校园信息查询工具（从学校数据库获取真实数据）：
 - query_student_schedule: 查询学生个人课表（按学号 + 可选星期几）
 - query_course_info: 多条件查询课程信息（可按课程编号、课程名、老师、星期、时间、教室、周次、学期等组合筛选）
 - query_class_students: 查询班级学生名单（按班级名称）
@@ -74,21 +72,28 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - query_all_teachers: 列出全校教师列表（姓名和工号）
 - query_all_enrollments: 列出全部选课记录（管理员全景视图）
 
-使用原则：
+## 使用原则：
 1. 维护对话上下文，记住用户在当前会话中说过的信息
 2. 对于需要长期记住的信息（如课表），主动使用 save_memory 保存
 3. 对于课表、课程、班级、学生、教室等校园信息查询，必须使用对应的 query_ 系列工具从学校数据库获取准确数据，不要凭猜测回答
-4. 如果不需要工具就直接回答
-5. 回答简洁、友好
+4. 对于需要制作PPT的请求，请使用 use_python_pptx 工具生成 PPTX 文件，色调以浅色系为主，可以结合用户制作的PPT调整，这个工具已经预导入了所需的模块，直接使用预导入的对象即可。
+5. 如果不需要调用工具就直接生成回答
+6. 回答简洁、友好
 
-角色感知原则：
+## 角色感知原则：
 - 每条消息开头会附带 [用户信息] 块，包含当前用户的姓名、身份、班级等信息
 - 不允许查询其他人的课程、课表、成绩等隐私信息
 - 不随意调用查询数据库的tools，仅在用户明确查询**自己**的课表、课程、班级、学生、教室等信息时才使用
 - 学生（student）：可查询个人课表、课程信息、同班同学，不允许查询其他班级或其他学生的隐私信息
 - 教师（teacher）：可查询授课安排、班级学生名单、教室信息，不允许查询其他教师或学生的隐私信息
 - 管理员（admin）：可查询全部数据，帮助进行系统管理和数据统计分析
-- 使用 query_ 系列工具时，应优先利用用户信息中的班级、学号等限定查询范围，提高准确性"""
+- 使用 query_ 系列工具时，应优先利用用户信息中的班级、学号等限定查询范围，提高准确性
+
+## 错误处理规则
+- 若工具返回空结果，应告知用户"未查询到相关数据，请检查查询条件"
+- 若工具调用失败，应重试一次，仍失败则提示"系统繁忙，请稍后重试"
+- 不得编造数据库查询结果
+"""
 
 
 # ============================================================
@@ -234,8 +239,6 @@ def get_weather(city: str) -> str:
             lines.append(f"  • {alert.get('type', '')} {alert.get('level', '')}预警：{alert.get('title', '')}")
 
     return "\n".join(lines)
-
-
 
 @tool
 def query_day_of_week(date_str: str) -> str:
@@ -456,6 +459,139 @@ def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
     except Exception as e:
         return f"Markdown 转 PDF 出错：{str(e)}"
 
+@tool
+def use_python_pptx(command: str) -> str:
+    """使用 python-pptx 库操作 PPTX 文件。参数 command 为一段 Python 代码字符串，
+    该代码可以使用已导入的 python-pptx 模块（pptx）来创建或编辑 PowerPoint 文件。
+    代码中可使用以下已导入的对象：
+    - Presentation (from pptx import Presentation)
+    - Inches, Pt, Emu (from pptx.util)
+    - 以及 pptx 整个模块
+    注意：代码中禁止使用 os、sys、subprocess、shutil、importlib、__import__、
+    open（仅允许 Presentation.save 内部使用）、eval、exec、compile 等危险操作。
+    工作目录为 WORKSPACE_DIR，生成的文件请放在当前目录下。"""
+    import io
+    import sys
+    import traceback
+
+    # ---- 安全检查：禁止危险关键字 ----
+    FORBIDDEN_KEYWORDS = [
+        "os.", "sys.", "subprocess", "shutil", "importlib",
+        "__import__", "eval(", "exec(", "compile(", "globals(",
+        "locals(", "__builtins__", "__globals__", "__locals__",
+        "open(", "file(", "input(", "raw_input(",
+        "socket", "urllib", "requests.", "http",
+        "rmdir", "remove(", "unlink(", "rmtree",
+        "Thread(", "Process(", "fork(",
+        "setattr(", "delattr(", "__class__", "__bases__",
+        "__subclasses__", "__mro__", "__code__", "__frame__",
+        "ctypes", "winreg", "_winreg",
+    ]
+    command_lower = command.lower()
+    for kw in FORBIDDEN_KEYWORDS:
+        if kw.lower() in command_lower:
+            return f"❌ 安全检查未通过：代码中包含禁止的关键字 '{kw}'。请移除相关调用后重试。"
+
+    # ---- 准备受限的执行环境 ----
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt, Emu
+        import pptx
+    except ImportError:
+        return "PPTX 操作功能需要安装 'python-pptx' 库，请先运行 'pip install python-pptx'。"
+
+    # 安全的全局命名空间：只暴露必要的模块和对象
+    safe_globals = {
+        "__builtins__": {
+            "print": print,
+            "range": range,
+            "len": len,
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "list": list,
+            "dict": dict,
+            "tuple": tuple,
+            "set": set,
+            "enumerate": enumerate,
+            "zip": zip,
+            "map": map,
+            "filter": filter,
+            "sorted": sorted,
+            "reversed": reversed,
+            "min": min,
+            "max": max,
+            "sum": sum,
+            "abs": abs,
+            "round": round,
+            "isinstance": isinstance,
+            "type": type,
+            "hasattr": hasattr,
+            "getattr": getattr,
+            "True": True,
+            "False": False,
+            "None": None,
+            "Exception": Exception,
+            "ValueError": ValueError,
+            "TypeError": TypeError,
+            "KeyError": KeyError,
+            "IndexError": IndexError,
+            "StopIteration": StopIteration,
+            "super": super,
+            "object": object,
+            "property": property,
+            "staticmethod": staticmethod,
+            "classmethod": classmethod,
+        },
+        "Presentation": Presentation,
+        "Inches": Inches,
+        "Pt": Pt,
+        "Emu": Emu,
+        "pptx": pptx,
+        "WORKSPACE_DIR": WORKSPACE_DIR,
+        "Path": Path,
+    }
+    safe_locals = {}
+
+    # ---- 捕获标准输出 ----
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    captured_stdout = io.StringIO()
+    captured_stderr = io.StringIO()
+    sys.stdout = captured_stdout
+    sys.stderr = captured_stderr
+
+    result = None
+    try:
+        # 切换到工作目录执行
+        original_cwd = os.getcwd()
+        os.chdir(str(WORKSPACE_DIR))
+
+        try:
+            exec(command, safe_globals, safe_locals)
+            result = "✅ PPTX 代码执行成功。"
+        finally:
+            os.chdir(original_cwd)
+    except SyntaxError as e:
+        result = f"❌ Python 语法错误：{str(e)}"
+    except Exception as e:
+        result = f"❌ 代码执行出错：{str(e)}\n\n详细堆栈：\n{traceback.format_exc()}"
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
+    # 拼接输出信息
+    stdout_output = captured_stdout.getvalue()
+    stderr_output = captured_stderr.getvalue()
+
+    parts = [result or "✅ PPTX 代码执行完成。"]
+    if stdout_output.strip():
+        parts.append(f"--- 标准输出 ---\n{stdout_output.strip()}")
+    if stderr_output.strip():
+        parts.append(f"--- 标准错误 ---\n{stderr_output.strip()}")
+
+    return "\n\n".join(parts)
 
 # ============================================================
 # 校园数据库查询工具（通过 Backend HTTP API）
@@ -503,7 +639,7 @@ def query_student_schedule(stu_num: str, day_of_week: Optional[int] = None) -> s
             lines.append(
                 f"    📖 {c.get('course_name', '未知')} | "
                 f"⏰ {c.get('start_time', '?')}-{c.get('end_time', '?')} | "
-                f"📍 {c.get('room_id', '未知教室')} | "
+                f"📍 {c.get('room_id', '未知')} | "
                 f"👨‍🏫 {c.get('teacher_name', '未知')} | "
                 f"📆 第{c.get('week_start', '?')}-{c.get('week_end', '?')}周"
             )
@@ -928,7 +1064,7 @@ tools = [
     get_weather, calculator, query_day_of_week, get_current_time,
     list_files, read_file, write_file,
     save_memory, recall_memory,
-    markdown_to_html, markdown_to_pdf,
+    markdown_to_html, markdown_to_pdf, use_python_pptx,
     query_student_schedule, query_course_info, query_class_students,
     query_student_info, query_room_info,
     query_teacher_students, query_free_room, query_course_students,
@@ -1261,6 +1397,7 @@ def _format_size(size_bytes: int) -> str:
 # ============================================================
 
 if __name__ == "__main__":
+
     def test(label: str, sid: str, msg: str, uname: str = "测试用户"):
         print(f"\n--- {label} ---")
         print(f"[User] {msg}")
@@ -1277,3 +1414,4 @@ if __name__ == "__main__":
     print(f"\n--- 会话 s1 共 {len(history)} 条消息 ---")
 
     print("\n✅ 测试完成！启动 API 服务请运行: python api.py")
+
