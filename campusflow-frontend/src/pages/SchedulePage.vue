@@ -3,11 +3,11 @@
     <section class="content-panel">
       <div class="section-heading">
         <div>
-          <h2>{{ currentUser.role === 'teacher' ? '班级课表' : '我的课表' }}</h2>
-          <p>{{ currentUser.role === 'teacher' ? '教师可切换查看不同班级课表。' : '课表来自学生所属班级。' }}</p>
+          <h2>{{ canSwitchClasses ? '班级课表' : '我的课表' }}</h2>
+          <p>{{ canSwitchClasses ? '可切换查看不同班级课表。' : '课表来自学生所属班级。' }}</p>
         </div>
 
-        <select v-if="currentUser.role === 'teacher'" v-model="selectedClassId">
+        <select v-if="canSwitchClasses" v-model="selectedClassId">
           <option v-for="item in classes" :key="item.id" :value="item.id">{{ item.name }}</option>
         </select>
       </div>
@@ -70,19 +70,24 @@ const props = defineProps({
 })
 
 const selectedClassId = ref(
-  props.currentUser.role === 'teacher' ? props.currentUser.classIds[0] : props.currentUser.classId
+  canSwitchRole(props.currentUser.role) ? props.currentUser.classIds?.[0] : props.currentUser.classId
 )
 
 watch(
   () => props.currentUser,
   user => {
-    selectedClassId.value = user.role === 'teacher' ? user.classIds[0] : user.classId
+    selectedClassId.value = canSwitchRole(user.role) ? user.classIds?.[0] : user.classId
   }
 )
 
+const canSwitchClasses = computed(() => canSwitchRole(props.currentUser.role))
 const selectedClass = computed(() => props.classes.find(item => item.id === selectedClassId.value))
 
 const visibleCourses = computed(() => {
   return props.courses.filter(item => item.classId === selectedClassId.value)
 })
+
+function canSwitchRole(role) {
+  return role === 'teacher' || role === 'admin'
+}
 </script>

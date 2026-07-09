@@ -23,20 +23,32 @@ const weekdayValues = Object.entries(weekdayLabels).reduce((acc, [value, label])
 }, {})
 
 export async function loadPlatformSnapshot() {
-  const [studentsRes, teachersRes, coursesRes, roomsRes, enrollmentsRes] = await Promise.all([
+  const [studentsRes, teachersRes, coursesRes, roomsRes, enrollmentsRes, classesRes, classmatesRes] = await Promise.all([
     platformClient.get('/api/students'),
     platformClient.get('/api/teacher'),
     platformClient.get('/api/course'),
     platformClient.get('/api/room'),
-    platformClient.get('/api/class-stu')
+    platformClient.get('/api/class-stu'),
+    safeGet('/api/classi', { Classes: [] }),
+    safeGet('/api/classmate', { alls: [] })
   ])
 
-  const students = normalizeStudents(studentsRes.data?.students || [])
+  const classmates = normalizeClassmates(getFirstArray(classmatesRes.data, ['alls', 'classmates', 'relations']))
+  const students = normalizeStudents(studentsRes.data?.students || [], classmates)
   const teachers = normalizeTeachers(teachersRes.data?.teacher || [])
   const rooms = normalizeRooms(roomsRes.data?.rooms || [])
   const enrollments = normalizeEnrollments(enrollmentsRes.data?.enrollments || [])
-  const courses = normalizeCourses(coursesRes.data?.Courses || coursesRes.data?.courses || [], enrollments, students)
-  const classes = deriveClasses(students, courses)
+  const courses = normalizeCourses(
+    coursesRes.data?.Courses || coursesRes.data?.courses || [],
+    enrollments,
+    students,
+    teachers
+  )
+  const classes = mergeClasses(
+    normalizeClasses(getFirstArray(classesRes.data, ['Classes', 'classes', 'classi']), students, teachers),
+    students,
+    courses
+  )
 
   return {
     classes,
@@ -44,7 +56,8 @@ export async function loadPlatformSnapshot() {
     teachers,
     courses,
     rooms,
-    enrollments
+    enrollments,
+    classmates
   }
 }
 
@@ -82,7 +95,7 @@ export async function loginPlatformUser({ role, username, password }) {
     return {
       id: `admin-${account}`,
       username: account,
-      role: 'teacher',
+      role: 'admin',
       authRole: 'admin',
       name: admin?.Name || '管理员',
       teacherNo: account,
@@ -167,11 +180,38 @@ export async function loadRealtimeWeather() {
 }
 
 export async function updateStudentClass(studentId, classId) {
-  const { data } = await platformClient.patch(`/api/students/${studentId}/Cls`, null, {
-    params: {
-      newcls: classId
+  const studentNo = String(studentId)
+  try {
+    const { data } = await platformClient.patch('/api/classmate/change_info', {
+      stu_num: studentNo,
+      class_id: classId
+    })
+    return data
+  } catch (error) {
+    const status = error?.response?.status
+    if (status && status !== 404) throw error
+  }
+
+  try {
+    const { data } = await platformClient.patch(`/api/students/${studentNo}/Cls`, null, {
+      params: {
+        newcls: classId
+      }
+    })
+    await createClassmate(studentNo, classId)
+    return data
+  } catch (error) {
+    const detail = String(error?.response?.data?.detail || '')
+    if (error?.response?.status === 400 && detail.includes('not been changed')) {
+      await createClassmate(studentNo, classId)
+      return { message: 'class unchanged, classmate relation synced if needed' }
     }
-  })
+    throw error
+  }
+}
+
+export async function createClass(classInfo) {
+  const { data } = await platformClient.post('/api/classi/add', toBackendClass(classInfo))
   return data
 }
 
@@ -183,7 +223,7 @@ export async function createCourse(course) {
 
 export async function enrollStudent(courseId, studentNo) {
   const { data } = await platformClient.post('/api/class-stu/enroll', {
-    course_id: Number(courseId),
+    course_id: String(courseId),
     stu_num: String(studentNo)
   })
   return data
@@ -196,7 +236,7 @@ export function toBackendCourse(course) {
     start_time: course.startTime || course.start_time || '08:00',
     end_time: course.endTime || course.end_time || '09:40',
     course_name: course.courseName || course.course_name || '未命名课程',
-    teacher_name: course.teacher || course.teacher_name || '待定',
+    teacher_num: String(course.teacherNum || course.teacher_num || course.teacherNo || course.teacher || '待定'),
     room_id: course.roomId || course.location || course.room_id || '3-3-301',
     week_start: Number(course.weekStart || course.week_start || 1),
     week_end: Number(course.weekEnd || course.week_end || 16),
@@ -204,14 +244,55 @@ export function toBackendCourse(course) {
   }
 }
 
-function normalizeStudents(rows) {
+function toBackendClass(classInfo) {
+  const classId = String(classInfo.classId || classInfo.id || classInfo.name || Date.now())
+  return {
+    class_id: classId,
+    name: classInfo.name || classId,
+    master_id: String(classInfo.masterId || classInfo.teacherNo || classInfo.headTeacherNo || '未分配'),
+    capacity: Number(classInfo.capacity || 45)
+  }
+}
+
+async function createClassmate(studentNo, classId) {
+  try {
+    await platformClient.post('/api/classmate/add', {
+      stu_num: studentNo,
+      class_id: classId
+    })
+  } catch {
+    // 班级成员关系是新接口；学生表已更新成功时，这里允许前端继续使用。
+  }
+}
+
+async function safeGet(url, fallbackData) {
+  try {
+    return await platformClient.get(url)
+  } catch {
+    return { data: fallbackData }
+  }
+}
+
+function getFirstArray(data, keys) {
+  for (const key of keys) {
+    if (Array.isArray(data?.[key])) return data[key]
+  }
+  return []
+}
+
+function normalizeStudents(rows, classmates = []) {
+  const classByStudent = new Map(
+    classmates.map(item => [item.studentNo, item.classId])
+  )
+
   return rows.map(row => ({
-    id: row.id,
-    backendId: row.id,
+    id: row.id || `student-${row.StuNum}`,
+    backendId: String(row.StuNum || ''),
+    recordId: row.id,
     userId: `student-${row.StuNum}`,
     name: row.Name || '未命名学生',
     studentNo: String(row.StuNum || ''),
-    classId: row.Cls || '未分配',
+    classId: classByStudent.get(String(row.StuNum || '')) || row.Cls || '未分配',
     raw: row
   }))
 }
@@ -252,8 +333,41 @@ function normalizeEnrollments(rows) {
   }))
 }
 
-function normalizeCourses(rows, enrollments, students) {
+function normalizeClassmates(rows) {
+  return rows.map(row => ({
+    id: row.id || `${row.class_id}-${row.stu_num}`,
+    classId: String(row.class_id || row.Cls || '未分配'),
+    studentNo: String(row.stu_num || row.StuNum || ''),
+    raw: row
+  })).filter(item => item.studentNo)
+}
+
+function normalizeClasses(rows, students, teachers) {
+  const teacherByNo = new Map(teachers.map(teacher => [teacher.teacherNo, teacher]))
+
+  return rows.map(row => {
+    const classId = String(row.class_id || row.id || row.name || '')
+    const masterId = String(row.master_id || row.teacher_num || '')
+    const studentCount = students.filter(student => student.classId === classId).length
+    const teacher = teacherByNo.get(masterId)
+
+    return {
+      id: classId,
+      name: row.name || classId || '未命名班级',
+      grade: inferGrade(row.name || classId),
+      major: inferMajor(row.name || classId),
+      headTeacher: teacher?.name || masterId || '待分配',
+      masterId,
+      capacity: Number(row.capacity || 0),
+      studentCount,
+      raw: row
+    }
+  }).filter(item => item.id)
+}
+
+function normalizeCourses(rows, enrollments, students, teachers) {
   const studentByNo = new Map(students.map(student => [student.studentNo, student]))
+  const teacherByNo = new Map(teachers.map(teacher => [teacher.teacherNo, teacher]))
   const classIdsByCourse = new Map()
 
   for (const enrollment of enrollments) {
@@ -268,6 +382,8 @@ function normalizeCourses(rows, enrollments, students) {
   return rows.flatMap(row => {
     const backendCourseId = String(row.course_id || row.id)
     const classIds = [...(classIdsByCourse.get(backendCourseId) || ['未分班课程'])]
+    const teacherNo = String(row.teacher_num || row.teacherNo || '')
+    const teacher = teacherByNo.get(teacherNo)
 
     return classIds.map(classId => ({
       id: `course-${backendCourseId}-${classId}`,
@@ -275,7 +391,8 @@ function normalizeCourses(rows, enrollments, students) {
       backendCourseId,
       classId,
       courseName: row.course_name || '未命名课程',
-      teacher: row.teacher_name || '待定',
+      teacher: teacher?.name || row.teacher_name || teacherNo || '待定',
+      teacherNo,
       weekday: weekdayLabels[Number(row.day)] || `周${row.day || '?'}`,
       startTime: row.start_time || '',
       endTime: row.end_time || '',
@@ -290,18 +407,37 @@ function normalizeCourses(rows, enrollments, students) {
   })
 }
 
-function deriveClasses(students, courses) {
-  const classIdsWithCourses = unique(courses.map(course => course.classId).filter(Boolean))
-  const classIdsFromStudents = unique(students.map(student => student.classId).filter(Boolean))
-  const classIds = unique([...classIdsWithCourses, ...classIdsFromStudents])
+function mergeClasses(backendClasses, students, courses) {
+  const classMap = new Map(backendClasses.map(item => [item.id, item]))
+  const classIds = unique([
+    ...students.map(student => student.classId).filter(Boolean),
+    ...courses.map(course => course.classId).filter(Boolean)
+  ])
 
-  return classIds.map(classId => ({
-    id: classId,
-    name: classId,
-    grade: '数据库',
-    major: '后端学生表',
-    headTeacher: '待分配'
-  }))
+  for (const classId of classIds) {
+    if (classMap.has(classId)) continue
+    classMap.set(classId, {
+      id: classId,
+      name: classId,
+      grade: inferGrade(classId),
+      major: '后端学生表',
+      headTeacher: '待分配',
+      capacity: 0
+    })
+  }
+
+  return [...classMap.values()]
+}
+
+function inferGrade(value) {
+  return String(value || '').match(/20\d{2}/)?.[0]
+    ? `${String(value).match(/20\d{2}/)[0]}级`
+    : '数据库'
+}
+
+function inferMajor(value) {
+  const text = String(value || '')
+  return text.replace(/20\d{2}级?/g, '').replace(/[0-9一二三四五六七八九十]+班/g, '').trim() || '班级主数据'
 }
 
 function unique(values) {

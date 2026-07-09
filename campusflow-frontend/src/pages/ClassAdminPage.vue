@@ -89,7 +89,12 @@
           <option v-for="item in classes" :key="item.id" :value="item.id">{{ item.name }}</option>
         </select>
         <input v-model="newCourse.courseName" placeholder="课程名称" />
-        <input v-model="newCourse.teacher" placeholder="任课教师" />
+        <select v-if="teachers.length" v-model="newCourse.teacher">
+          <option v-for="teacher in teachers" :key="teacher.teacherNo" :value="teacher.teacherNo">
+            {{ teacher.name }}（{{ teacher.teacherNo }}）
+          </option>
+        </select>
+        <input v-else v-model="newCourse.teacher" placeholder="任课教师编号" />
         <select v-model="newCourse.weekday">
           <option>周一</option>
           <option>周二</option>
@@ -126,6 +131,10 @@ const props = defineProps({
     type: Array,
     required: true
   },
+  teachers: {
+    type: Array,
+    default: () => []
+  },
   rooms: {
     type: Array,
     default: () => []
@@ -148,7 +157,7 @@ const newCourse = reactive({
   courseId: nextCourseId(),
   classId: props.classes[0]?.id || '',
   courseName: '',
-  teacher: '',
+  teacher: defaultTeacherNo(),
   weekday: '周一',
   startTime: '08:00',
   endTime: '09:40',
@@ -178,13 +187,28 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => props.teachers,
+  () => {
+    if (!newCourse.teacher) {
+      newCourse.teacher = defaultTeacherNo()
+    }
+  },
+  { immediate: true }
+)
+
 function addClass() {
   if (!newClass.name.trim()) return
   emit('add-class', {
+    classId: newClass.name.trim(),
     name: newClass.name.trim(),
     major: newClass.major.trim() || '未设置',
     grade: newClass.grade.trim() || '2024级',
-    headTeacher: props.currentUser.name
+    headTeacher: props.currentUser.name,
+    headTeacherNo: props.currentUser.teacherNo,
+    teacherNo: props.currentUser.teacherNo,
+    masterId: props.currentUser.teacherNo,
+    capacity: 45
   })
   newClass.name = ''
   newClass.major = ''
@@ -195,12 +219,14 @@ function assignStudent(studentId, classId) {
 }
 
 function addCourse() {
-  if (!newCourse.classId || !newCourse.courseId.trim() || !newCourse.courseName.trim()) return
+  const teacherNum = newCourse.teacher.trim() || defaultTeacherNo()
+  if (!newCourse.classId || !newCourse.courseId.trim() || !newCourse.courseName.trim() || !teacherNum) return
   emit('add-course', {
     ...newCourse,
     courseId: newCourse.courseId.trim(),
     courseName: newCourse.courseName.trim(),
-    teacher: newCourse.teacher.trim() || props.currentUser.name,
+    teacher: teacherNum,
+    teacherNum,
     roomId: newCourse.roomId.trim() || '3-3-301',
     location: newCourse.roomId.trim() || '3-3-301',
     weekStart: Number(newCourse.weekStart) || 1,
@@ -210,7 +236,7 @@ function addCourse() {
   })
   newCourse.courseId = nextCourseId()
   newCourse.courseName = ''
-  newCourse.teacher = ''
+  newCourse.teacher = defaultTeacherNo()
   newCourse.weekStart = '1'
   newCourse.weekEnd = '16'
 }
@@ -225,5 +251,10 @@ function className(classId) {
 
 function nextCourseId() {
   return String(Date.now()).slice(-9)
+}
+
+function defaultTeacherNo() {
+  if (props.currentUser.role === 'teacher') return props.currentUser.teacherNo || ''
+  return props.teachers[0]?.teacherNo || ''
 }
 </script>
