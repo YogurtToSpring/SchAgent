@@ -7,10 +7,16 @@
         <p>{{ weather.temperature || '--' }} · {{ weather.wind || '--' }}</p>
       </article>
 
-      <article class="metric-card action-card" @click="$emit('navigate', 'schedule')">
+      <article v-if="!isAdmin" class="metric-card action-card" @click="$emit('navigate', 'schedule')">
         <span>下一节课</span>
         <strong>{{ nextCourse?.startTime || '-' }}</strong>
         <p>{{ nextCourse ? `${nextCourse.courseName} · ${nextCourse.location}` : '今日暂无课程' }}</p>
+      </article>
+
+      <article v-else class="metric-card action-card" @click="$emit('navigate', 'classes')">
+        <span>平台对象</span>
+        <strong>{{ classes.length }}</strong>
+        <p>{{ students.length }} 名学生 · {{ courses.length }} 条课程</p>
       </article>
 
       <article class="metric-card action-card" @click="$emit('navigate', 'todos')">
@@ -27,7 +33,7 @@
     </div>
 
     <section class="dashboard-grid">
-      <section class="content-panel">
+      <section v-if="!isAdmin" class="content-panel">
         <div class="section-heading">
           <div>
             <h2>今日课程</h2>
@@ -46,6 +52,35 @@
           </article>
         </div>
         <div v-else class="empty-state compact">今日暂无课程</div>
+      </section>
+
+      <section v-else class="content-panel">
+        <div class="section-heading">
+          <div>
+            <h2>平台概况</h2>
+            <p>账号、班级、课程与成绩数据</p>
+          </div>
+          <button class="ghost-action" type="button" @click="$emit('navigate', 'classes')">进入管理</button>
+        </div>
+
+        <div class="admin-overview-list">
+          <article>
+            <span>班级</span>
+            <strong>{{ classes.length }}</strong>
+          </article>
+          <article>
+            <span>学生</span>
+            <strong>{{ students.length }}</strong>
+          </article>
+          <article>
+            <span>课程</span>
+            <strong>{{ courses.length }}</strong>
+          </article>
+          <article>
+            <span>成绩记录</span>
+            <strong>{{ grades.length }}</strong>
+          </article>
+        </div>
       </section>
 
       <section class="content-panel">
@@ -75,10 +110,9 @@
         </div>
 
         <div class="workbench-actions">
-          <button type="button" @click="$emit('navigate', 'grades')">成绩</button>
-          <button type="button" @click="$emit('navigate', 'library')">图书馆</button>
-          <button type="button" @click="$emit('navigate', 'forum')">论坛</button>
-          <button type="button" @click="$emit('navigate', 'assistant')">问助手</button>
+          <button v-for="action in workbenchActions" :key="action.view" type="button" @click="$emit('navigate', action.view)">
+            {{ action.label }}
+          </button>
         </div>
       </section>
 
@@ -149,6 +183,7 @@ defineEmits(['navigate'])
 const weekdayLabels = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 const todayIndex = new Date().getDay()
 const currentWeekdayLabel = weekdayLabels[todayIndex]
+const isAdmin = computed(() => props.currentUser.role === 'admin')
 
 const visibleClassIds = computed(() => {
   if (props.currentUser.role === 'student') return [props.currentUser.classId].filter(Boolean)
@@ -156,7 +191,13 @@ const visibleClassIds = computed(() => {
   return props.classes.map(item => item.id)
 })
 
-const visibleCourses = computed(() => props.courses.filter(item => visibleClassIds.value.includes(item.classId)))
+const visibleCourses = computed(() => {
+  if (props.currentUser.role === 'admin') return props.courses
+  if (props.currentUser.role === 'teacher') {
+    return props.courses.filter(course => isTeacherCourse(course))
+  }
+  return props.courses.filter(item => visibleClassIds.value.includes(item.classId))
+})
 
 const todayCourses = computed(() => {
   return visibleCourses.value
@@ -173,7 +214,7 @@ const topTodo = computed(() => pendingTodos.value[0] || null)
 const unreadNotifications = computed(() => props.notifications.filter(item => item.status === 'unread'))
 
 const roleSummary = computed(() => {
-  if (props.currentUser.role === 'teacher') return `${visibleCourses.value.length} 门课程 · ${props.students.length} 名学生`
+  if (props.currentUser.role === 'teacher') return `${visibleCourses.value.length} 门课程 · ${visibleCourseStudents.value.length} 名学生`
   if (props.currentUser.role === 'admin') return `${props.classes.length} 个班级 · ${props.courses.length} 条课程`
   const average = props.grades.length
     ? Math.round(props.grades.reduce((sum, item) => sum + item.score, 0) / props.grades.length)
@@ -181,8 +222,43 @@ const roleSummary = computed(() => {
   return `平均分 ${average} · ${props.reservations.length} 条预约`
 })
 
+const workbenchActions = computed(() => {
+  if (props.currentUser.role === 'admin') {
+    return [
+      { view: 'classes', label: '班级与课程' },
+      { view: 'admin', label: '管理后台' },
+      { view: 'assistant', label: '问助手' }
+    ]
+  }
+  if (props.currentUser.role === 'teacher') {
+    return [
+      { view: 'classes', label: '班级与课程' },
+      { view: 'schedule', label: '教学课表' },
+      { view: 'forum', label: '论坛' },
+      { view: 'assistant', label: '问助手' }
+    ]
+  }
+  return [
+    { view: 'grades', label: '成绩' },
+    { view: 'library', label: '图书馆' },
+    { view: 'forum', label: '论坛' },
+    { view: 'assistant', label: '问助手' }
+  ]
+})
+
 function className(classId) {
   return props.classes.find(item => item.id === classId)?.name || classId || '未分班'
+}
+
+const visibleCourseStudents = computed(() => {
+  const classIds = new Set(visibleCourses.value.map(course => course.classId).filter(Boolean))
+  return props.students.filter(student => classIds.has(student.classId))
+})
+
+function isTeacherCourse(course) {
+  const teacherNo = props.currentUser.teacherNo || props.currentUser.username
+  const teacherName = props.currentUser.name
+  return course.teacherNo === teacherNo || course.teacherNum === teacherNo || course.teacher === teacherName
 }
 
 function normalizeWeekday(value) {

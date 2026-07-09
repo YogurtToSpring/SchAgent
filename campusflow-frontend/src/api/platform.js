@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
 const platformClient = axios.create({
   baseURL: apiBaseUrl,
@@ -229,6 +229,128 @@ export async function enrollStudent(courseId, studentNo) {
   return data
 }
 
+export async function createTodoItem(userId, todo) {
+  const { data } = await platformClient.post('/api/todo/add', {
+    user_id: String(userId),
+    title: todo.title,
+    description: todo.description || todo.note || '',
+    date: todo.date || todo.dueDate,
+    priority: todo.priority || 'medium'
+  })
+  return normalizeTodo(data.todo)
+}
+
+export async function loadTodosForUser(user) {
+  const userId = getBackendUserId(user)
+  if (!userId) return []
+
+  if (user.role === 'admin') {
+    const { data } = await platformClient.get('/api/todo', {
+      params: {
+        limit: 500,
+        offset: 0
+      }
+    })
+    return normalizeTodos(data?.todos || [])
+  }
+
+  const { data } = await platformClient.get(`/api/todo/user/${encodeURIComponent(userId)}`)
+  return normalizeTodos(data?.todos || [])
+}
+
+export async function updateTodoItemStatus(todoId, status) {
+  const { data } = await platformClient.patch(`/api/todo/${todoId}/status`, {
+    status: toBackendTodoStatus(status)
+  })
+  return normalizeTodo(data.todo)
+}
+
+export async function deleteTodoItem(todoId) {
+  const { data } = await platformClient.delete('/api/todo/delete', {
+    params: {
+      todo_id: todoId
+    }
+  })
+  return data
+}
+
+export async function loadGradesForUser(user, context = {}) {
+  if (!user) return { grades: [], summary: null }
+
+  if (user.role === 'student') {
+    const studentNo = user.studentNo || user.username
+    if (!studentNo) return { grades: [], summary: null }
+    const [gradesRes, gpaRes] = await Promise.all([
+      platformClient.get(`/api/grade/student/${encodeURIComponent(studentNo)}`),
+      safeGet(`/api/students/${encodeURIComponent(studentNo)}/gpa`, null)
+    ])
+    return {
+      grades: normalizeStudentGrades(gradesRes.data?.grades || [], gradesRes.data),
+      summary: gpaRes.data ? normalizeGpaSummary(gpaRes.data) : null
+    }
+  }
+
+  if (user.role === 'teacher') {
+    const teacherNo = user.teacherNo || user.username
+    if (!teacherNo) return { grades: [], summary: null }
+    const { data } = await platformClient.get(`/api/grade/teacher/${encodeURIComponent(teacherNo)}`)
+    return {
+      grades: normalizeTeacherGrades(data?.courses || [], context),
+      summary: {
+        teacherName: data?.teacher_name || user.name,
+        courseCount: data?.count || 0
+      }
+    }
+  }
+
+  const { data } = await platformClient.get('/api/grade')
+  return {
+    grades: normalizeAdminGrades(data?.grades || [], context),
+    summary: {
+      count: data?.count || 0
+    }
+  }
+}
+
+export async function saveGradeRecord(grade) {
+  const payload = toBackendGrade(grade)
+  try {
+    const { data } = await platformClient.post('/api/grade/add', payload)
+    await refreshGpaCache().catch(() => null)
+    return data
+  } catch (error) {
+    const detail = String(error?.response?.data?.detail || '')
+    if (error?.response?.status === 400 && detail.includes('already exist')) {
+      const { data } = await platformClient.patch('/api/grade/modify', payload)
+      await refreshGpaCache().catch(() => null)
+      return data
+    }
+    throw error
+  }
+}
+
+export async function refreshGpaCache() {
+  const { data } = await platformClient.post('/api/students/gpa/refresh')
+  return data
+}
+
+export async function registerStudentAccount(student) {
+  const classId = student.classId || student.Cls || student.className || '未分配'
+  const studentNo = String(student.studentNo || student.StuNum || student.username || '').trim()
+  const name = String(student.name || student.Name || '').trim()
+  const password = String(student.password || '123456')
+
+  const { data } = await platformClient.post('/api/students/register', {
+    Name: name,
+    StuNum: studentNo,
+    Cls: classId,
+    password
+  })
+
+  await createClassmate(studentNo, classId)
+  return data
+}
+
 export function toBackendCourse(course) {
   return {
     course_id: String(course.courseId || course.backendCourseId || Date.now()),
@@ -240,7 +362,8 @@ export function toBackendCourse(course) {
     room_id: course.roomId || course.location || course.room_id || '3-3-301',
     week_start: Number(course.weekStart || course.week_start || 1),
     week_end: Number(course.weekEnd || course.week_end || 16),
-    semester: course.semester || '2025-2026-2'
+    semester: course.semester || '2025-2026-2',
+    credit: Number(course.credit || course.courseCredit || 0)
   }
 }
 
@@ -293,6 +416,7 @@ function normalizeStudents(rows, classmates = []) {
     name: row.Name || '未命名学生',
     studentNo: String(row.StuNum || ''),
     classId: classByStudent.get(String(row.StuNum || '')) || row.Cls || '未分配',
+    gpa: Number(row.gpa || 0),
     raw: row
   }))
 }
@@ -402,9 +526,131 @@ function normalizeCourses(rows, enrollments, students, teachers) {
       weekEnd: row.week_end,
       weeks: `${row.week_start || 1}-${row.week_end || 16}周`,
       semester: row.semester || '',
+      credit: Number(row.credit || 0),
       raw: row
     }))
   })
+}
+
+function normalizeTodos(rows) {
+  return rows.map(normalizeTodo).filter(Boolean)
+}
+
+function normalizeTodo(row = {}) {
+  if (!row) return null
+  return {
+    id: row.id,
+    backendId: row.id,
+    userId: String(row.user_id || ''),
+    title: row.title || '未命名待办',
+    dueDate: row.date || '',
+    date: row.date || '',
+    status: toFrontendTodoStatus(row.status),
+    category: row.category || '个人',
+    source: row.source || '后端同步',
+    priority: row.priority || 'medium',
+    note: row.description || row.note || '',
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || '',
+    raw: row
+  }
+}
+
+function normalizeStudentGrades(rows, payload = {}) {
+  return rows.map(row => ({
+    id: row.id || `${row.course_id}-${payload.stu_num}-${row.semester}`,
+    backendId: row.id,
+    studentNo: payload.stu_num,
+    studentName: payload.name,
+    classId: payload.cls,
+    courseId: String(row.course_id || ''),
+    courseName: row.course_name || String(row.course_id || ''),
+    credit: Number(row.credit || 0),
+    score: Number(row.score || 0),
+    gradePoint: Number(row.grade_point || 0),
+    gradeLetter: row.grade_letter || '',
+    semester: row.semester || '',
+    examType: row.exam_type || '',
+    remark: row.remark || '',
+    raw: row
+  }))
+}
+
+function normalizeTeacherGrades(courses, context = {}) {
+  return courses.flatMap(course => {
+    const students = Array.isArray(course.students) ? course.students : []
+    return students.map(student => normalizeGradeRow({
+      ...student,
+      course_id: course.course_id,
+      course_name: course.course_name,
+      credit: course.credit,
+      semester: student.semester || course.semester
+    }, context))
+  })
+}
+
+function normalizeAdminGrades(rows, context = {}) {
+  return rows.map(row => normalizeGradeRow(row, context))
+}
+
+function normalizeGradeRow(row, context = {}) {
+  const courseId = String(row.course_id || '')
+  const studentNo = String(row.stu_num || row.studentNo || '')
+  const course = (context.courses || []).find(item => item.backendCourseId === courseId || item.courseId === courseId)
+  const student = (context.students || []).find(item => item.studentNo === studentNo)
+
+  return {
+    id: row.id || `${courseId}-${studentNo}-${row.semester || ''}`,
+    backendId: row.id,
+    studentNo,
+    studentName: row.name || student?.name || studentNo,
+    classId: row.cls || student?.classId || '',
+    courseId,
+    courseName: row.course_name || course?.courseName || courseId,
+    credit: Number(row.credit ?? course?.credit ?? 0),
+    score: Number(row.score || 0),
+    gradePoint: Number(row.grade_point || 0),
+    gradeLetter: row.grade_letter || '',
+    semester: row.semester || course?.semester || '',
+    examType: row.exam_type || '',
+    remark: row.remark || '',
+    raw: row
+  }
+}
+
+function normalizeGpaSummary(data = {}) {
+  return {
+    gpa: Number(data.gpa || 0),
+    totalCreditsTaken: Number(data.total_credits_taken || 0),
+    totalCreditsEarned: Number(data.total_credits_earned || 0),
+    courseCount: Number(data.course_count || 0),
+    bySemester: data.by_semester || {}
+  }
+}
+
+function toBackendGrade(grade) {
+  return {
+    course_id: String(grade.courseId || grade.course_id || ''),
+    stu_num: String(grade.studentNo || grade.stu_num || ''),
+    score: Number(grade.score || 0),
+    semester: grade.semester || '2025-2026-2',
+    exam_type: grade.examType || grade.exam_type || '期末考试',
+    remark: grade.remark || ''
+  }
+}
+
+function getBackendUserId(user = {}) {
+  return user.studentNo || user.teacherNo || user.username || user.id || ''
+}
+
+function toFrontendTodoStatus(status) {
+  if (status === 'completed') return 'done'
+  return status || 'pending'
+}
+
+function toBackendTodoStatus(status) {
+  if (status === 'done') return 'completed'
+  return status || 'pending'
 }
 
 function mergeClasses(backendClasses, students, courses) {

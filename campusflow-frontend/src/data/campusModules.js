@@ -86,15 +86,17 @@ export const initialForumPosts = [
 ]
 
 export const initialNotifications = [
-  { id: 'notice-001', type: '课程通知', title: '数据库原理本周实验安排已更新', time: '今天 09:20', status: 'unread', link: 'schedule' },
-  { id: 'notice-002', type: '成绩通知', title: '2025-2026-1 学期成绩已发布', time: '昨天 18:00', status: 'unread', link: 'grades' },
-  { id: 'notice-003', type: '图书馆通知', title: '明天下午座位预约即将开始', time: '昨天 12:30', status: 'read', link: 'library' },
-  { id: 'notice-004', type: '论坛互动', title: '你的帖子收到 2 条新回复', time: '周一 20:10', status: 'read', link: 'forum' }
+  { id: 'notice-001', type: '课程通知', title: '数据库原理本周实验安排已更新', time: '今天 09:20', status: 'unread', link: 'schedule', audienceRoles: ['student', 'teacher'], classId: 'class-se-1' },
+  { id: 'notice-002', type: '成绩通知', title: '2025-2026-1 学期成绩已发布', time: '昨天 18:00', status: 'unread', link: 'grades', audienceRoles: ['student'], classId: 'class-se-1' },
+  { id: 'notice-003', type: '图书馆通知', title: '明天下午座位预约即将开始', time: '昨天 12:30', status: 'read', link: 'library', audienceRoles: ['student'] },
+  { id: 'notice-004', type: '论坛互动', title: '你的帖子收到 2 条新回复', time: '周一 20:10', status: 'read', link: 'forum', audienceRoles: ['student'] },
+  { id: 'notice-005', type: '系统通知', title: '本周需完成新生账号导入核验', time: '今天 08:45', status: 'unread', link: 'classes', audienceRoles: ['admin'] }
 ]
 
 export const initialFiles = [
-  { id: 'file-001', name: '数据库复习计划.md', type: 'Markdown', source: '助手生成', size_formatted: '4.8 KB', createdAt: '今天 10:30', url: '' },
-  { id: 'file-002', name: '软件工程导论课程资料.pdf', type: 'PDF', source: '课程资料', size_formatted: '1.2 MB', createdAt: '昨天 16:20', url: '' }
+  { id: 'file-001', name: '数据库复习计划.md', type: 'Markdown', source: '助手生成', size_formatted: '4.8 KB', createdAt: '今天 10:30', url: '', audienceRoles: ['student'], classId: 'class-se-1' },
+  { id: 'file-002', name: '软件工程导论课程资料.pdf', type: 'PDF', source: '课程资料', size_formatted: '1.2 MB', createdAt: '昨天 16:20', url: '', audienceRoles: ['student', 'teacher'], classId: 'class-se-1' },
+  { id: 'file-003', name: '学生账号导入模板.xlsx', type: 'Excel', source: '管理资料', size_formatted: '18 KB', createdAt: '今天 09:00', url: '', audienceRoles: ['admin'] }
 ]
 
 export const initialSystemLogs = [

@@ -86,28 +86,48 @@ const props = defineProps({
 defineEmits(['navigate', 'logout'])
 
 const navItems = computed(() => {
-  const baseItems = [
+  const commonItems = [
     { key: 'dashboard', label: '首页工作台', icon: Home },
     { key: 'profile', label: '我的信息', icon: UserRound },
     { key: 'todos', label: '待办事项', icon: CheckSquare },
-    { key: 'schedule', label: props.currentUser.role === 'teacher' ? '教学课表' : '我的课表', icon: CalendarDays },
-    { key: 'grades', label: props.currentUser.role === 'teacher' ? '成绩录入' : '成绩系统', icon: GraduationCap },
-    { key: 'library', label: '图书馆预约', icon: BookOpen },
-    { key: 'forum', label: '校园论坛', icon: MessageSquareText },
     { key: 'notifications', label: '通知消息', icon: Bell },
     { key: 'files', label: '文件中心', icon: Files },
     { key: 'assistant', label: '智能助手', icon: Bot }
   ]
 
-  if (props.currentUser.role === 'teacher' || props.currentUser.role === 'admin') {
-    baseItems.splice(4, 0, { key: 'classes', label: '班级管理', icon: UsersRound })
+  if (props.currentUser.role === 'student') {
+    return [
+      ...commonItems.slice(0, 3),
+      { key: 'schedule', label: '我的课表', icon: CalendarDays },
+      { key: 'grades', label: '成绩系统', icon: GraduationCap },
+      { key: 'library', label: '图书馆预约', icon: BookOpen },
+      { key: 'forum', label: '校园论坛', icon: MessageSquareText },
+      ...commonItems.slice(3)
+    ]
+  }
+
+  if (props.currentUser.role === 'teacher') {
+    return [
+      ...commonItems.slice(0, 3),
+      { key: 'classes', label: '班级与课程', icon: UsersRound },
+      { key: 'schedule', label: '教学课表', icon: CalendarDays },
+      { key: 'forum', label: '校园论坛', icon: MessageSquareText },
+      ...commonItems.slice(3)
+    ]
   }
 
   if (props.currentUser.role === 'admin') {
-    baseItems.push({ key: 'admin', label: '管理后台', icon: ShieldCheck })
+    return [
+      ...commonItems.slice(0, 3),
+      { key: 'classes', label: '班级与课程', icon: UsersRound },
+      { key: 'schedule', label: '全校课表', icon: CalendarDays },
+      { key: 'forum', label: '论坛审核', icon: MessageSquareText },
+      ...commonItems.slice(3),
+      { key: 'admin', label: '管理后台', icon: ShieldCheck }
+    ]
   }
 
-  return baseItems
+  return commonItems
 })
 
 const roleText = computed(() => {

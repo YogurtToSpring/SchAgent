@@ -146,6 +146,8 @@ const props = defineProps({
   }
 })
 
+const emit = defineEmits(['todo-updated'])
+
 const DEFAULT_SESSION_TITLE = '新会话'
 const MAX_SESSIONS = 18
 
@@ -298,6 +300,9 @@ async function handleSend(text) {
           if (index >= 0) {
             toolCalls.value[index] = { ...toolCalls.value[index], ...call }
           }
+          if (isTodoTool(call.tool)) {
+            emit('todo-updated')
+          }
         },
         onFileReady: artifact => {
           patchAssistantMessage(assistantIndex, current => ({
@@ -314,6 +319,9 @@ async function handleSend(text) {
         },
         onDone: response => {
           sessionId.value = response.session_id
+          if ((response.tool_calls || []).some(call => isTodoTool(call.tool || call.name))) {
+            emit('todo-updated')
+          }
           patchAssistantMessage(assistantIndex, current => ({
             type: response.status === 'need_clarification' ? 'clarification' : 'normal',
             artifacts: response.artifacts || [],
@@ -657,7 +665,7 @@ function roleLabel(role) {
 
 function buildUserContext() {
   return {
-    user_id: props.currentUser.id,
+    user_id: backendUserId(props.currentUser),
     name: props.currentUser.name,
     role: props.currentUser.role,
     student_no: props.currentUser.studentNo || null,
@@ -665,6 +673,24 @@ function buildUserContext() {
     class_id: props.currentUser.classId || null,
     class_ids: props.currentUser.classIds || []
   }
+}
+
+function backendUserId(user = {}) {
+  return user.studentNo || user.teacherNo || user.username || user.id || ''
+}
+
+function isTodoTool(toolName = '') {
+  return [
+    'add_todo',
+    'delete_todo',
+    'query_todos_by_date',
+    'query_user_todos',
+    'update_todo',
+    'update_todo_status',
+    'batch_update_status',
+    'batch_update_todo_status',
+    'get_todo_stats'
+  ].includes(toolName)
 }
 
 function buildPlatformContext() {
