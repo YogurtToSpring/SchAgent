@@ -1,8 +1,16 @@
+﻿"""
+    course.py - 课程管理模块
+    
+    负责课程信息的增删改查、学分管理、空闲教室查询等功能。
+    绩点计算相关的函数也实现在此模块中，供 grade.py 调用。
+"""
+
 from fastapi import FastAPI, HTTPException, APIRouter
 from pydantic import BaseModel
 import sqlite3
 import os
 from dotenv import load_dotenv
+from typing import Optional
 
 load_dotenv()
 
@@ -11,10 +19,15 @@ app = FastAPI()
 router = APIRouter(prefix="/api")
 
 DATABASE = os.getenv("DATABASE_URL", "course.db")
+TEACHER_DB = os.getenv("TEACHER_DB_PATH", "teacher.db")
+STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
+CLASS_STU_DB = os.getenv("CLASS_STU_DB_PATH", "class_stu.db")
+
+# 数据库初始化
+# ============================================================
 
 def init_db():
     conn = sqlite3.connect(DATABASE)
-
     conn.execute("""
         CREATE TABLE IF NOT EXISTS course(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,9 +40,15 @@ def init_db():
             room_id TEXT,
             week_start INTEGER NOT NULL,
             week_end INTEGER NOT NULL,
-            semester TEXT NOT NULL
+            semester TEXT NOT NULL,
+            credit REAL NOT NULL DEFAULT 0
         )
     """)
+    # 兼容旧数据库：如果 credit 列不存在则补加
+    try:
+        conn.execute("ALTER TABLE course ADD COLUMN credit REAL NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -46,10 +65,15 @@ class Corse(BaseModel):
     week_start: int
     week_end: int
     semester: str
+    credit: float
 
-# 内部开发人员注入数据库接口
-# 仅admin可添加课程
-# 添加要求上课地点存在，老师存在（前提数据库搭建依赖关系）
+# ============================================================
+# 管理员添加课程接口
+# 调用方式: POST /api/course/add
+# 请求体: { course_id, day, start_time, end_time, course_name, teacher_num, room_id, week_start, week_end, semester, credit }
+# 功能说明: 添加新课程，自动校验教室是否存在、教师工号是否有效
+# 权限说明: 仅admin可调用，前端应仅在admin面板开放此入口
+# ============================================================
 @router.post("/course/add")
 def addcourse(course_data: Corse):
     conn = sqlite3.connect(DATABASE)
@@ -85,8 +109,8 @@ def addcourse(course_data: Corse):
         raise HTTPException(status_code=404, detail=f"Teacher {course_data.teacher_num} Not Found")
 
     conn.execute(
-        "INSERT INTO course (course_id, day, start_time, end_time, course_name, teacher_num, room_id, week_start, week_end, semester) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (course_data.course_id, course_data.day, course_data.start_time, course_data.end_time, course_data.course_name, course_data.teacher_num, course_data.room_id, course_data.week_start, course_data.week_end, course_data.semester)
+        "INSERT INTO course (course_id, day, start_time, end_time, course_name, teacher_num, room_id, week_start, week_end, semester, credit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (course_data.course_id, course_data.day, course_data.start_time, course_data.end_time, course_data.course_name, course_data.teacher_num, course_data.room_id, course_data.week_start, course_data.week_end, course_data.semester, course_data.credit)
     )
 
     conn.commit()
@@ -94,7 +118,12 @@ def addcourse(course_data: Corse):
 
     return {"message": f"Course {course_data.course_id} added successfully"}
 
-# 仅提供老师的接口，为老师实现立即查看自己的所有课程信息的功能，以便下个函数提供修改接口
+# ============================================================
+# 教师查询自己所授全部课程接口
+# 调用方式: GET /api/course/teacher?teacher_num=T001
+# 功能说明: 根据教师工号返回该教师的所有课程信息（含学分）
+# 权限说明: teacher和admin可调用，teacher_num由前端自动传入当前登录账号
+# ============================================================
 @router.get("/course/teacher")
 def teacher_course(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
@@ -115,9 +144,13 @@ def teacher_course(teacher_num: str):
     conn.close()
     return {"teacher_num ": teacher_num, "Course": [dict(row) for row in rows], "count": len(rows)}
 
-# 内部开发人员注入数据库接口
-# 仅admin可修改所有课程，对于admin的界面可以使用display函数（后面），teacher仅可修改自己的课程，这里是可视化的传参
-# 修改要求上课地点存在，老师存在（前提数据库搭建依赖关系）
+# ============================================================
+# 修改课程信息接口
+# 调用方式: PATCH /api/course/{course_id}/info
+# 请求体: { course_id, day, start_time, end_time, course_name, teacher_num, room_id, week_start, week_end, semester, credit }
+# 功能说明: 修改指定课程的完整信息，自动校验教室和教师是否存在
+# 权限说明: admin可修改所有课程，teacher仅可修改自己的课程（由前端控制）
+# ============================================================
 @router.patch("/course/{course_id}/info")
 def change_info(course_id: str, newinfo: Corse):
     conn = sqlite3.connect(DATABASE)
@@ -162,7 +195,8 @@ def change_info(course_id: str, newinfo: Corse):
            room_id = ?,
           week_start = ?,
            week_end = ?,
-           semester = ?
+           semester = ?,
+           credit = ?
        WHERE course_id = ?""",
     (
         newinfo.day,
@@ -174,6 +208,7 @@ def change_info(course_id: str, newinfo: Corse):
         newinfo.week_start,
         newinfo.week_end,
         newinfo.semester,
+        newinfo.credit,
         course_id
     )
     )
@@ -182,8 +217,12 @@ def change_info(course_id: str, newinfo: Corse):
 
     return {"message": f"Course {course_id} info had been changed successfully"}
 
-# 内部开发人员注入数据库接口
-# 仅admin可删除课程
+# ============================================================
+# 删除课程接口
+# 调用方式: DELETE /api/course/delete?course_id=XXXX
+# 功能说明: 删除指定的课程记录
+# 权限说明: 仅admin可调用
+# ============================================================
 @router.delete("/course/delete")
 def delete_course(course_id: str):
     conn = sqlite3.connect(DATABASE)
@@ -206,7 +245,12 @@ def delete_course(course_id: str):
 
     return {"message": "Course deleted successfully"}
 
-# 全体用户可查看
+# ============================================================
+# 查看全部课程列表接口
+# 调用方式: GET /api/course
+# 功能说明: 返回所有课程的完整列表（含学分），按课程号排序
+# 权限说明: 所有用户均可调用
+# ============================================================
 @router.get("/course")
 def list_all():
     conn = sqlite3.connect(DATABASE)
@@ -217,9 +261,15 @@ def list_all():
     conn.close()
     return {"Courses": [dict(row) for row in rows], "count": len(rows)}
 
-# 全体用户可查看
+# ============================================================
+# 多条件筛选查询课程接口
+# 调用方式: GET /api/course/display?course_id=XXX&course_name=XXX&semester=XXX&credit=3
+# 可选参数: course_id, day, start_time, end_time, course_name, teacher_num, room_id, week_start, week_end, semester, credit
+# 功能说明: 按任意组合条件筛选课程，支持模糊搜索（course_name和teacher_num支持LIKE匹配）
+# 权限说明: 所有用户均可调用
+# ============================================================
 @router.get("/course/display")
-def display_courses(course_id=None, day=None, start_time=None, end_time=None, course_name=None, teacher_num=None, room_id=None, week_start=None, week_end=None, semester=None):
+def display_courses(course_id=None, day=None, start_time=None, end_time=None, course_name=None, teacher_num=None, room_id=None, week_start=None, week_end=None, semester=None, credit=None):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     query = "SELECT * FROM course WHERE 1=1"
@@ -254,26 +304,35 @@ def display_courses(course_id=None, day=None, start_time=None, end_time=None, co
     if semester is not None:
         query += " AND semester = ?"
         params.append(semester)
+    if credit is not None:
+        query += " AND credit = ?"
+        params.append(credit)
     query += " ORDER BY course_id"
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return {"courses": [dict(r) for r in rows], "count": len(rows)}
 
-# 老师查询自己的课头号，开放给teacher和admin
+# ============================================================
+# 查询教师名下所有课程ID接口
+# 调用方式: GET /api/course/teacher/course_id?teacher_num=T001
+# 功能说明: 返回指定教师所授全部课程的course_id列表
+# 权限说明: teacher和admin可调用
+# ============================================================
 @router.get("/course/teacher/course_id")
 def get_teacher_course(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     
-    cont = sqlite3.connect(TEACHER_DB)
-    cont.row_factory = sqlite3.Row
-    corse = cont.execute(
+    tea_conn = sqlite3.connect(TEACHER_DB)
+    tea_conn.row_factory = sqlite3.Row
+    teacher = tea_conn.execute(
         "SELECT * FROM teacher WHERE Number = ?", (teacher_num,)
     ).fetchone()
-    if not corse:
+    if not teacher:
         conn.close()
-        cont.close()
+        tea_conn.close()
         raise HTTPException(status_code=404, detail=f"Teacher {teacher_num} Not Found!")
+    tea_conn.close()
 
     rows = conn.execute(
         "SELECT * FROM course WHERE teacher_num = ?", (teacher_num,)
@@ -282,14 +341,12 @@ def get_teacher_course(teacher_num: str):
     conn.close()
     return {"message": [row["course_id"] for row in rows], "count": len(rows)}
 
-CLASS_STU_DB = os.getenv("CLASS_STU_DB_PATH", "class_stu.db")
-STUDENTS_DB = os.getenv("STUDENTS_DB_PATH", "students.db")
-TEACHER_DB = os.getenv("TEACHER_DB_PATH", "teacher.db")
-
-# 老师查询所教课程及学生
-# 仅为老师提供此接口，teacher_num为固定传参，自动导入，没有填充信息
-# admin可以查询所有老师（只要存在）的课程信息和教授学生
-# 功能上与前面的/course/teacher有点相似，只是细化到学生了
+# ============================================================
+# 教师查询所授课程及学生名单接口
+# 调用方式: GET /api/course/teacher/{teacher_num}/students
+# 功能说明: 返回教师所有课程的学生名单（含学生姓名、班级）
+# 权限说明: teacher可查自己，admin可查任意教师
+# ============================================================
 @router.get("/course/teacher/{teacher_num}/students")
 def get_teacher_students(teacher_num: str):
     conn = sqlite3.connect(DATABASE)
@@ -297,14 +354,14 @@ def get_teacher_students(teacher_num: str):
     
     cont = sqlite3.connect(TEACHER_DB)
     cont.row_factory = sqlite3.Row
-    corse = cont.execute(
+    teacher = cont.execute(
         "SELECT * FROM teacher WHERE Number = ?", (teacher_num,)
     ).fetchone()
-    if not corse:
+    if not teacher:
         conn.close()
         cont.close()
         raise HTTPException(status_code=404, detail=f"Teacher {teacher_num} Not Found!")
-    teacher_name = corse["Name"]
+    teacher_name = teacher["Name"]
 
     courses = conn.execute(
         "SELECT * FROM course WHERE teacher_num = ?", (teacher_num,)).fetchall()
@@ -355,8 +412,12 @@ def time_to_minutes(time_str: str) -> int:
     hours, minutes = map(int, time_str.split(':'))
     return hours * 60 + minutes
 
-# 查询空闲教室，需要手动填充第几周，周几（day），起始和终止时间，教学楼信息
-# 面向所有用户开放
+# ============================================================
+# 查询空闲教室接口
+# 调用方式: GET /api/course/free-room?week=1&day=1&st_time=08:00&ed_time=09:40&area=3&building=1&roomid=301&semester=2024-2025-1
+# 功能说明: 检测指定时间段内某教室是否有课程冲突，无冲突则返回可用
+# 权限说明: 所有用户均可调用，常用于排课辅助
+# ============================================================
 @router.get("/course/free-room")
 def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, building: str, roomid: str, semester: str):
     connr = sqlite3.connect("room.db")
@@ -382,9 +443,107 @@ def get_free_room(week: str, day: str, st_time: str, ed_time: str, area: str, bu
         if r["week_start"] <= int(week) and r["week_end"] >= int(week):
             if (time_to_minutes(r["start_time"]) <= st_int and time_to_minutes(r["end_time"]) > st_int) or (time_to_minutes(r["start_time"]) < ed_int and time_to_minutes(r["end_time"]) >= ed_int) or (time_to_minutes(r["start_time"]) >= st_int and time_to_minutes(r["end_time"]) <= ed_int):
                 conn1.close()
-                raise HTTPException(status_code=400, detail=f"Conflict caused! {display_courses(r["course_id"], r["day"], r["start_time"], r["end_time"])}  |  Selected time is not free")
+                raise HTTPException(status_code=400, detail=f"Conflict caused!  |  Selected time is not free")
             
     conn1.close()
     return {"message": f"Time permitted at {room}. Enjoy your time"}
+
+
+# ============================================================
+# 按学期查询课程接口
+# 调用方式: GET /api/course/semester/{semester}
+# 功能说明: 返回指定学期的所有课程列表（含学分），按课程号排序
+# 权限说明: 所有用户均可调用
+# ============================================================
+@router.get("/course/semester/{semester}")
+def get_by_semester(semester: str):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM course WHERE semester = ? ORDER BY course_id", (semester,)
+    ).fetchall()
+    conn.close()
+    return {"semester": semester, "courses": [dict(row) for row in rows], "count": len(rows)}
+
+
+# ============================================================
+# 课程详细信息（含教师姓名）接口
+# 调用方式: GET /api/course/{course_id}/detail
+# 功能说明: 返回指定课程的完整信息，同时返回授课教师姓名
+# 权限说明: 所有用户均可调用
+# ============================================================
+@router.get("/course/{course_id}/detail")
+def get_course_detail(course_id: str):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    course = conn.execute(
+        "SELECT * FROM course WHERE course_id = ?", (course_id,)
+    ).fetchone()
+    if not course:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Course Not Found")
+    
+    course_dict = dict(course)
+    
+    tea_conn = sqlite3.connect(TEACHER_DB)
+    tea_conn.row_factory = sqlite3.Row
+    teacher = tea_conn.execute(
+        "SELECT Name FROM teacher WHERE Number = ?", (course["teacher_num"],)
+    ).fetchone()
+    tea_conn.close()
+    course_dict["teacher_name"] = teacher["Name"] if teacher else ""
+    
+    conn.close()
+    return {"course": course_dict}
+
+
+# ============================================================
+# 学分统计接口
+# 调用方式: GET /api/course/credit/stats?semester=2024-2025-1
+# 可选参数: semester（不传则统计全部学期）
+# 功能说明: 统计课程总数、总学分、各学期学分分布
+# 权限说明: 所有用户均可调用
+# ============================================================
+@router.get("/course/credit/stats")
+def get_credit_stats(semester: Optional[str] = None):
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    
+    if semester:
+        rows = conn.execute(
+            "SELECT course_id, course_name, credit FROM course WHERE semester = ? ORDER BY course_id",
+            (semester,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT course_id, course_name, credit, semester FROM course ORDER BY semester, course_id"
+        ).fetchall()
+    
+    semester_stats = {}
+    total_credits = 0
+    for row in rows:
+        sem = row["semester"]
+        if sem not in semester_stats:
+            semester_stats[sem] = {"count": 0, "total_credit": 0.0, "courses": []}
+        semester_stats[sem]["count"] += 1
+        semester_stats[sem]["total_credit"] += row["credit"]
+        total_credits += row["credit"]
+        semester_stats[sem]["courses"].append({
+            "course_id": row["course_id"],
+            "course_name": row["course_name"],
+            "credit": row["credit"]
+        })
+    
+    conn.close()
+    
+    result = {
+        "total_courses": len(rows),
+        "total_credits": total_credits,
+        "by_semester": semester_stats
+    }
+    if semester:
+        result["semester"] = semester
+    
+    return result
 
 app.include_router(router)
