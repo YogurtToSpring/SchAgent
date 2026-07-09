@@ -31,6 +31,7 @@ from class_stu import router as class_stu_router
 from classi import router as classi_router
 from classmate import router as classmate_router
 from todo import router as todo_router
+from grade import router as grade_router
 
 AGENT_API_BASE = "http://localhost:8000"
 
@@ -45,6 +46,7 @@ app.include_router(class_stu_router)
 app.include_router(classi_router)
 app.include_router(classmate_router)
 app.include_router(todo_router)
+app.include_router(grade_router)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
