@@ -494,7 +494,7 @@ function pickRandomItems(items, count) {
 
 function createLocalSession(title = DEFAULT_SESSION_TITLE) {
   return {
-    localId: crypto.randomUUID(),
+    localId: createClientId(),
     title,
     agentSessionId: null,
     createdAt: new Date().toISOString(),
@@ -509,7 +509,7 @@ function createLocalSession(title = DEFAULT_SESSION_TITLE) {
 
 function normalizeSession(session) {
   const normalized = {
-    localId: session.localId || crypto.randomUUID(),
+    localId: session.localId || createClientId(),
     title: session.title || DEFAULT_SESSION_TITLE,
     agentSessionId: session.agentSessionId || null,
     createdAt: session.createdAt || new Date().toISOString(),
@@ -620,13 +620,20 @@ function cloneData(value) {
 
 function createMessage(role, type, content, extra = {}) {
   return {
-    id: crypto.randomUUID(),
+    id: createClientId(),
     role,
     type,
     content,
     createdAt: dayjs().format('HH:mm'),
     ...extra
   }
+}
+
+function createClientId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function patchAssistantMessage(index, patch) {
