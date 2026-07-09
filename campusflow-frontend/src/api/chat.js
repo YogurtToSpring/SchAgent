@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
 export async function sendMessage(payload) {
@@ -145,9 +145,10 @@ function applyStreamEvent(eventName, data, result, handlers) {
   }
 
   if (eventName === 'tool_call') {
+    const toolName = data.name || data.tool || 'unknown'
     const call = {
-      tool: data.name || 'unknown',
-      label: toolLabel(data.name),
+      tool: toolName,
+      label: toolLabel(toolName),
       status: 'running',
       input: data.args || {},
       output: null
@@ -158,12 +159,21 @@ function applyStreamEvent(eventName, data, result, handlers) {
   }
 
   if (eventName === 'tool_result') {
-    const call = [...result.tool_calls].reverse().find(item => item.tool === data.name && item.output == null)
-    if (call) {
-      call.status = data.success === false ? 'failed' : 'success'
-      call.output = data.result || ''
-      handlers.onToolResult?.(call, data)
+    const toolName = data.name || data.tool || 'unknown'
+    let call = [...result.tool_calls].reverse().find(item => item.tool === toolName && item.output == null)
+    if (!call) {
+      call = {
+        tool: toolName,
+        label: toolLabel(toolName),
+        status: 'running',
+        input: data.args || {},
+        output: null
+      }
+      result.tool_calls.push(call)
     }
+    call.status = data.success === false ? 'failed' : 'success'
+    call.output = data.result || ''
+    handlers.onToolResult?.(call, data)
     const inferredArtifacts = inferFileArtifactsFromText(data.result || '')
     if (inferredArtifacts.length) {
       result.artifacts = mergeArtifacts(result.artifacts, inferredArtifacts)
@@ -429,7 +439,16 @@ function toolLabel(name = '') {
     save_memory: '保存记忆',
     recall_memory: '读取记忆',
     markdown_to_html: 'Markdown转HTML',
-    markdown_to_pdf: 'Markdown转PDF'
+    markdown_to_pdf: 'Markdown转PDF',
+    add_todo: '添加待办',
+    delete_todo: '删除待办',
+    query_todos_by_date: '日期待办查询',
+    query_user_todos: '用户待办查询',
+    update_todo: '待办内容更新',
+    update_todo_status: '待办状态更新',
+    batch_update_status: '批量更新待办',
+    batch_update_todo_status: '批量更新待办',
+    get_todo_stats: '待办统计'
   }
   return labels[name] || name || '工具调用'
 }

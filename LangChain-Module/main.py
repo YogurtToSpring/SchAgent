@@ -18,6 +18,7 @@ import re
 import json
 import math
 import requests
+from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -34,12 +35,13 @@ from langchain_core.callbacks import BaseCallbackHandler
 # 配置（通过环境变量覆盖默认值）
 # ============================================================
 
+load_dotenv()
 WORKSPACE_DIR = Path(os.getenv("SCHAGENT_WORKSPACE", str(Path(__file__).parent / "workspace")))
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
-API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-0a79b44b052a4e7189c35c09b04040fb")
-MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
-BACKEND_API_BASE = os.getenv("SCHAGENT_BACKEND_URL", "http://localhost:8080")
+API_KEY = os.getenv("DEEPSEEK_API_KEY")
+MODEL_NAME = os.getenv("DEEPSEEK_MODEL")
+BACKEND_API_BASE = os.getenv("SCHAGENT_BACKEND_URL")
 
 SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。
 与用户对话时务必保持严格的Markdown格式输出，前端会将你的回答直接渲染为网页内容。
