@@ -72,6 +72,12 @@ class TodoStatusUpdate(BaseModel):
     status: str = Field(..., description="待办状态: pending / in_progress / completed")
 
 
+class BatchStatusUpdate(BaseModel):
+    """批量更新待办状态请求体"""
+    todo_ids: List[int] = Field(..., description="待办ID列表")
+    status: str = Field(..., description="目标状态: pending / in_progress / completed")
+
+
 # ==================== 辅助函数 ====================
 
 def _validate_date(date_str: str) -> bool:
@@ -402,20 +408,20 @@ def list_all_todos(
 # ==================== 批量操作接口（供 LangChain Agent 使用） ====================
 
 @router.post("/todo/batch/status")
-def batch_update_status(
-    todo_ids: List[int] = Field(..., description="待办ID列表"),
-    status: str = Field(..., description="目标状态: pending / in_progress / completed"),
-):
+def batch_update_status(data: BatchStatusUpdate):
     """
     批量更新待办状态
     ---
     LangChain Agent 调用: 一次性将多个待办标记为完成
     """
-    if not _validate_status(status):
+    if not _validate_status(data.status):
         raise HTTPException(status_code=400, detail="状态值无效，应为 pending / in_progress / completed")
 
-    if not todo_ids:
+    if not data.todo_ids:
         raise HTTPException(status_code=400, detail="待办ID列表不能为空")
+
+    todo_ids = data.todo_ids
+    status = data.status
 
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row

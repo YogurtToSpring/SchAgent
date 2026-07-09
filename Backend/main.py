@@ -32,6 +32,7 @@ from classi import router as classi_router
 from classmate import router as classmate_router
 from todo import router as todo_router
 from grade import router as grade_router
+from library import router as library_router
 
 AGENT_API_BASE = "http://localhost:8000"
 
@@ -47,6 +48,7 @@ app.include_router(classi_router)
 app.include_router(classmate_router)
 app.include_router(todo_router)
 app.include_router(grade_router)
+app.include_router(library_router)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -116,6 +118,11 @@ TOOL_LABELS = {
     "query_user_todos": "用户待办查询",
     "update_todo_status": "待办状态更新",
     "get_todo_stats": "待办统计",
+    "reserve_seat": "预约座位",
+    "cancel_reservation": "取消预约",
+    "get_user_reservations": "预约记录查询",
+    "get_seats_status": "座位状态查询",
+    "get_available_seats": "可用座位查询",
 }
 
 async def call_agent_stream_collect(session_id: str, message: str, username: Optional[str] = None, role: Optional[str] = None, user_id: Optional[str] = None, class_id: Optional[str] = None, class_ids: Optional[List[str]] = None) -> ChatResponse:
