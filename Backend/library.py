@@ -217,6 +217,26 @@ def reserve_seat(req: ReserveRequest):
     if req.date < today:
         raise HTTPException(status_code=400, detail="不能预约过去日期的座位")
 
+    stu_con = sqlite3.connect("students.db")
+    stu_con.row_factory = sqlite3.Row
+    row1 = stu_con.execute(
+        "SELECT * FROM students WHERE StuNum = ?",
+        (req.user_id,)
+    ).fetchone()
+    stu_con.close()
+
+    tea_con = sqlite3.connect("teacher.db")
+    tea_con.row_factory = sqlite3.Row
+    row2 = tea_con.execute(
+        "SELECT * FROM teacher WHERE Number = ?",
+        (req.user_id,)
+    ).fetchone()
+    tea_con.close()
+
+    if not row1:
+        if not row2:
+            raise HTTPException(status_code=404, detail="User Not Found!")
+
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
 
