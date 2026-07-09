@@ -47,6 +47,7 @@
       v-show="activeView === 'classes'"
       :classes="classes"
       :students="students"
+      :teachers="teachers"
       :rooms="rooms"
       :current-user="currentUser"
       @add-class="addClass"
@@ -157,6 +158,7 @@ import {
   initialTodos
 } from './data/campusModules'
 import {
+  createClass,
   createCourse,
   enrollStudent,
   loadRealtimeWeather,
@@ -171,6 +173,7 @@ const currentUser = ref(null)
 const activeView = ref('dashboard')
 const classes = ref(cloneData(initialClasses))
 const students = ref(cloneData(initialStudents))
+const teachers = ref([])
 const courses = ref(cloneData(initialCourses))
 const rooms = ref([])
 const weather = ref(cloneData(weatherSnapshot))
@@ -270,18 +273,18 @@ function openNotice(notice) {
   if (notice.link) activeView.value = notice.link
 }
 
-function addClass(payload) {
-  const classItem = {
-    id: payload.name,
-    ...payload
-  }
-  classes.value.push(classItem)
-
-  if (currentUser.value?.role === 'teacher') {
-    currentUser.value = {
-      ...currentUser.value,
-      classIds: [...currentUser.value.classIds, classItem.id]
-    }
+async function addClass(payload) {
+  try {
+    await createClass({
+      ...payload,
+      classId: payload.classId || payload.id || payload.name,
+      teacherNo: currentUser.value?.teacherNo || payload.teacherNo || payload.masterId,
+      masterId: currentUser.value?.teacherNo || payload.masterId || payload.teacherNo
+    })
+    await refreshPlatformData()
+    platformError.value = ''
+  } catch (error) {
+    platformError.value = '创建班级失败，请确认班级编号未重复且后端服务可用。'
   }
 }
 
@@ -343,6 +346,7 @@ async function refreshPlatformData() {
 function applyPlatformSnapshot(snapshot) {
   classes.value = snapshot.classes.length ? snapshot.classes : cloneData(initialClasses)
   students.value = snapshot.students.length ? snapshot.students : cloneData(initialStudents)
+  teachers.value = snapshot.teachers || []
   courses.value = snapshot.courses.length ? snapshot.courses : cloneData(initialCourses)
   rooms.value = snapshot.rooms || []
 }
