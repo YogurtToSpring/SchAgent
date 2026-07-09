@@ -44,12 +44,9 @@ BACKEND_API_BASE = os.getenv("SCHAGENT_BACKEND_URL", "http://localhost:8080")
 SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAgent。
 与用户对话时务必保持严格的Markdown格式输出，前端会将你的回答直接渲染为网页内容。
 对话/生成的PDF中尽量不要使用emoji表情。
-为避免前端渲染出错，需要使用****着重强调的内容时，请保持星号前后有空格。
-为避免前端渲染出错，需要绘制表格时，请保持表格前后有空行。
 请遵循以下规则：
-你可以使用以下工具：
 
-通用工具：
+## 通用工具：
 - get_weather: 查询城市天气
 - calculator: 安全地执行数学计算
 - query_day_of_week: 查询指定日期是星期几
@@ -61,8 +58,9 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - recall_memory: 读取用户的长期记忆
 - markdown_to_html: 将 Markdown 文本转换为 HTML
 - markdown_to_pdf: 将 Markdown 文本转换为 PDF 文件
+- use_python_pptx: 使用 python-pptx 库操作 PPTX 文件（创建/编辑幻灯片）
 
-校园信息查询工具（从学校数据库获取真实数据）：
+## 校园信息查询工具（从学校数据库获取真实数据）：
 - query_student_schedule: 查询学生个人课表（按学号 + 可选星期几）
 - query_course_info: 多条件查询课程信息（可按课程编号、课程名、老师、星期、时间、教室、周次、学期等组合筛选）
 - query_class_students: 查询班级学生名单（按班级名称）
@@ -74,21 +72,36 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - query_all_teachers: 列出全校教师列表（姓名和工号）
 - query_all_enrollments: 列出全部选课记录（管理员全景视图）
 
-使用原则：
+## 待办管理工具（个人任务管理）：
+- add_todo: 添加待办事项（需提供 user_id、标题、日期，可选描述和优先级）
+- delete_todo: 删除指定ID的待办事项
+- query_todos_by_date: 查询某个日期的待办（可按用户过滤）
+- query_user_todos: 查询某用户的全部待办（支持按状态、日期范围过滤）
+- update_todo_status: 更新待办状态（pending / in_progress / completed）
+- get_todo_stats: 获取用户待办统计（各状态数量、今日待办、逾期数）
+
+## 使用原则：
 1. 维护对话上下文，记住用户在当前会话中说过的信息
 2. 对于需要长期记住的信息（如课表），主动使用 save_memory 保存
 3. 对于课表、课程、班级、学生、教室等校园信息查询，必须使用对应的 query_ 系列工具从学校数据库获取准确数据，不要凭猜测回答
-4. 如果不需要工具就直接回答
-5. 回答简洁、友好
+4. 对于需要制作PPT的请求，请使用 use_python_pptx 工具生成 PPTX 文件，色调以浅色系为主，可以结合用户制作的PPT调整，这个工具已经预导入了所需的模块，直接使用预导入的对象即可。
+5. 如果不需要调用工具就直接生成回答
+6. 回答简洁、友好
 
-角色感知原则：
+## 角色感知原则：
 - 每条消息开头会附带 [用户信息] 块，包含当前用户的姓名、身份、班级等信息
 - 不允许查询其他人的课程、课表、成绩等隐私信息
 - 不随意调用查询数据库的tools，仅在用户明确查询**自己**的课表、课程、班级、学生、教室等信息时才使用
 - 学生（student）：可查询个人课表、课程信息、同班同学，不允许查询其他班级或其他学生的隐私信息
 - 教师（teacher）：可查询授课安排、班级学生名单、教室信息，不允许查询其他教师或学生的隐私信息
 - 管理员（admin）：可查询全部数据，帮助进行系统管理和数据统计分析
-- 使用 query_ 系列工具时，应优先利用用户信息中的班级、学号等限定查询范围，提高准确性"""
+- 使用 query_ 系列工具时，应优先利用用户信息中的班级、学号等限定查询范围，提高准确性
+
+## 错误处理规则
+- 若工具返回空结果，应告知用户"未查询到相关数据，请检查查询条件"
+- 若工具调用失败，应重试一次，仍失败则提示"系统繁忙，请稍后重试"
+- 不得编造数据库查询结果
+"""
 
 
 # ============================================================
@@ -234,8 +247,6 @@ def get_weather(city: str) -> str:
             lines.append(f"  • {alert.get('type', '')} {alert.get('level', '')}预警：{alert.get('title', '')}")
 
     return "\n".join(lines)
-
-
 
 @tool
 def query_day_of_week(date_str: str) -> str:
@@ -456,6 +467,139 @@ def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
     except Exception as e:
         return f"Markdown 转 PDF 出错：{str(e)}"
 
+@tool
+def use_python_pptx(command: str) -> str:
+    """使用 python-pptx 库操作 PPTX 文件。参数 command 为一段 Python 代码字符串，
+    该代码可以使用已导入的 python-pptx 模块（pptx）来创建或编辑 PowerPoint 文件。
+    代码中可使用以下已导入的对象：
+    - Presentation (from pptx import Presentation)
+    - Inches, Pt, Emu (from pptx.util)
+    - 以及 pptx 整个模块
+    注意：代码中禁止使用 os、sys、subprocess、shutil、importlib、__import__、
+    open（仅允许 Presentation.save 内部使用）、eval、exec、compile 等危险操作。
+    工作目录为 WORKSPACE_DIR，生成的文件请放在当前目录下。"""
+    import io
+    import sys
+    import traceback
+
+    # ---- 安全检查：禁止危险关键字 ----
+    FORBIDDEN_KEYWORDS = [
+        "os.", "sys.", "subprocess", "shutil", "importlib",
+        "__import__", "eval(", "exec(", "compile(", "globals(",
+        "locals(", "__builtins__", "__globals__", "__locals__",
+        "open(", "file(", "input(", "raw_input(",
+        "socket", "urllib", "requests.", "http",
+        "rmdir", "remove(", "unlink(", "rmtree",
+        "Thread(", "Process(", "fork(",
+        "setattr(", "delattr(", "__class__", "__bases__",
+        "__subclasses__", "__mro__", "__code__", "__frame__",
+        "ctypes", "winreg", "_winreg",
+    ]
+    command_lower = command.lower()
+    for kw in FORBIDDEN_KEYWORDS:
+        if kw.lower() in command_lower:
+            return f"❌ 安全检查未通过：代码中包含禁止的关键字 '{kw}'。请移除相关调用后重试。"
+
+    # ---- 准备受限的执行环境 ----
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt, Emu
+        import pptx
+    except ImportError:
+        return "PPTX 操作功能需要安装 'python-pptx' 库，请先运行 'pip install python-pptx'。"
+
+    # 安全的全局命名空间：只暴露必要的模块和对象
+    safe_globals = {
+        "__builtins__": {
+            "print": print,
+            "range": range,
+            "len": len,
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "list": list,
+            "dict": dict,
+            "tuple": tuple,
+            "set": set,
+            "enumerate": enumerate,
+            "zip": zip,
+            "map": map,
+            "filter": filter,
+            "sorted": sorted,
+            "reversed": reversed,
+            "min": min,
+            "max": max,
+            "sum": sum,
+            "abs": abs,
+            "round": round,
+            "isinstance": isinstance,
+            "type": type,
+            "hasattr": hasattr,
+            "getattr": getattr,
+            "True": True,
+            "False": False,
+            "None": None,
+            "Exception": Exception,
+            "ValueError": ValueError,
+            "TypeError": TypeError,
+            "KeyError": KeyError,
+            "IndexError": IndexError,
+            "StopIteration": StopIteration,
+            "super": super,
+            "object": object,
+            "property": property,
+            "staticmethod": staticmethod,
+            "classmethod": classmethod,
+        },
+        "Presentation": Presentation,
+        "Inches": Inches,
+        "Pt": Pt,
+        "Emu": Emu,
+        "pptx": pptx,
+        "WORKSPACE_DIR": WORKSPACE_DIR,
+        "Path": Path,
+    }
+    safe_locals = {}
+
+    # ---- 捕获标准输出 ----
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    captured_stdout = io.StringIO()
+    captured_stderr = io.StringIO()
+    sys.stdout = captured_stdout
+    sys.stderr = captured_stderr
+
+    result = None
+    try:
+        # 切换到工作目录执行
+        original_cwd = os.getcwd()
+        os.chdir(str(WORKSPACE_DIR))
+
+        try:
+            exec(command, safe_globals, safe_locals)
+            result = "✅ PPTX 代码执行成功。"
+        finally:
+            os.chdir(original_cwd)
+    except SyntaxError as e:
+        result = f"❌ Python 语法错误：{str(e)}"
+    except Exception as e:
+        result = f"❌ 代码执行出错：{str(e)}\n\n详细堆栈：\n{traceback.format_exc()}"
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
+    # 拼接输出信息
+    stdout_output = captured_stdout.getvalue()
+    stderr_output = captured_stderr.getvalue()
+
+    parts = [result or "✅ PPTX 代码执行完成。"]
+    if stdout_output.strip():
+        parts.append(f"--- 标准输出 ---\n{stdout_output.strip()}")
+    if stderr_output.strip():
+        parts.append(f"--- 标准错误 ---\n{stderr_output.strip()}")
+
+    return "\n\n".join(parts)
 
 # ============================================================
 # 校园数据库查询工具（通过 Backend HTTP API）
@@ -503,7 +647,7 @@ def query_student_schedule(stu_num: str, day_of_week: Optional[int] = None) -> s
             lines.append(
                 f"    📖 {c.get('course_name', '未知')} | "
                 f"⏰ {c.get('start_time', '?')}-{c.get('end_time', '?')} | "
-                f"📍 {c.get('room_id', '未知教室')} | "
+                f"📍 {c.get('room_id', '未知')} | "
                 f"👨‍🏫 {c.get('teacher_name', '未知')} | "
                 f"📆 第{c.get('week_start', '?')}-{c.get('week_end', '?')}周"
             )
@@ -916,6 +1060,188 @@ def query_all_enrollments() -> str:
 
 
 # ============================================================
+# 待办管理工具（通过 Backend /api/todo/* 接口）
+# ============================================================
+
+@tool
+def add_todo(user_id: str, title: str, date: str, description: str = "", priority: str = "medium") -> str:
+    """添加待办事项。参数 user_id 为用户ID（学号/工号），title 为待办标题（必填），
+    date 为日期格式 YYYY-MM-DD（必填），description 为详细描述（可选），
+    priority 为优先级 low/medium/high（可选，默认 medium）。"""
+    try:
+        resp = requests.post(
+            f"{BACKEND_API_BASE}/api/todo/add",
+            json={
+                "user_id": user_id,
+                "title": title,
+                "date": date,
+                "description": description,
+                "priority": priority,
+            },
+            timeout=10,
+        )
+        if resp.status_code == 400:
+            detail = resp.json().get("detail", "参数错误")
+            return f"添加待办失败：{detail}"
+        resp.raise_for_status()
+        data = resp.json()
+        todo = data.get("todo", {})
+        return f"✅ 待办添加成功！\n  📌 {todo.get('title')}\n  📅 {todo.get('date')} | 🏷 {todo.get('priority')} | 📋 {todo.get('status')}\n  ID: {todo.get('id')}"
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"添加待办出错：{str(e)}"
+
+
+@tool
+def delete_todo(todo_id: int) -> str:
+    """删除待办事项。参数 todo_id 为待办的唯一ID（整数）。"""
+    try:
+        resp = requests.delete(
+            f"{BACKEND_API_BASE}/api/todo/delete",
+            params={"todo_id": todo_id},
+            timeout=10,
+        )
+        if resp.status_code == 404:
+            return f"待办 {todo_id} 不存在，可能已被删除。"
+        resp.raise_for_status()
+        data = resp.json()
+        deleted = data.get("deleted", {})
+        return f"🗑 已删除待办：{deleted.get('title', '未知')}（日期：{deleted.get('date', '?')}）"
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"删除待办出错：{str(e)}"
+
+
+@tool
+def query_todos_by_date(date: str, user_id: str = "") -> str:
+    """查询某个日期的待办事项。参数 date 为日期格式 YYYY-MM-DD（必填），
+    user_id 为可选的用户ID，传入则只查该用户的待办。"""
+    try:
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/todo/date/{date}",
+            params=params,
+            timeout=10,
+        )
+        if resp.status_code == 400:
+            return f"查询失败：日期格式错误，应为 YYYY-MM-DD"
+        resp.raise_for_status()
+        data = resp.json()
+        todos = data.get("todos", [])
+        if not todos:
+            who = f"{user_id} 在" if user_id else ""
+            return f"📅 {who}{date} 暂无待办事项。"
+        lines = [f"📅 {date} 待办事项（共 {len(todos)} 个）："]
+        for t in todos:
+            icon = {"pending": "⬜", "in_progress": "🔄", "completed": "✅"}.get(t.get("status"), "❓")
+            lines.append(
+                f"  {icon} [{t.get('id')}] {t.get('title')} | "
+                f"🏷 {t.get('priority', '?')} | "
+                f"👤 {t.get('user_id', '?')}"
+            )
+        return "\n".join(lines)
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询待办出错：{str(e)}"
+
+
+@tool
+def query_user_todos(user_id: str, status: str = "", date_from: str = "", date_to: str = "") -> str:
+    """查询某个用户的全部待办。参数 user_id 为用户ID/学号（必填），
+    status 可选按状态过滤（pending/in_progress/completed），
+    date_from/date_to 可选按日期范围过滤（YYYY-MM-DD）。"""
+    try:
+        params = {}
+        if status:
+            params["status"] = status
+        if date_from:
+            params["date_from"] = date_from
+        if date_to:
+            params["date_to"] = date_to
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/todo/user/{user_id}",
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        todos = data.get("todos", [])
+        if not todos:
+            return f"👤 {user_id} 暂无待办事项。"
+        lines = [f"👤 {user_id} 的待办事项（共 {len(todos)} 个）："]
+        for t in todos:
+            icon = {"pending": "⬜", "in_progress": "🔄", "completed": "✅"}.get(t.get("status"), "❓")
+            lines.append(
+                f"  {icon} [{t.get('id')}] {t.get('title')} | "
+                f"📅 {t.get('date')} | 🏷 {t.get('priority', '?')}"
+            )
+        return "\n".join(lines)
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"查询用户待办出错：{str(e)}"
+
+
+@tool
+def update_todo_status(todo_id: int, status: str) -> str:
+    """更新待办状态。参数 todo_id 为待办ID（整数），
+    status 为新状态：pending（待办）/ in_progress（进行中）/ completed（已完成）。"""
+    try:
+        resp = requests.patch(
+            f"{BACKEND_API_BASE}/api/todo/{todo_id}/status",
+            json={"status": status},
+            timeout=10,
+        )
+        if resp.status_code == 400:
+            detail = resp.json().get("detail", "状态值无效")
+            return f"更新失败：{detail}"
+        if resp.status_code == 404:
+            return f"待办 {todo_id} 不存在。"
+        resp.raise_for_status()
+        data = resp.json()
+        todo = data.get("todo", {})
+        icon = {"pending": "⬜", "in_progress": "🔄", "completed": "✅"}.get(status, "❓")
+        return f"{icon} 待办 [{todo_id}]「{todo.get('title', '?')}」状态已更新为：{status}"
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"更新待办状态出错：{str(e)}"
+
+
+@tool
+def get_todo_stats(user_id: str) -> str:
+    """获取用户待办统计信息。参数 user_id 为用户ID/学号（必填）。
+    返回各状态数量、今日待办数、逾期未完成数等统计数据。"""
+    try:
+        resp = requests.get(
+            f"{BACKEND_API_BASE}/api/todo/stats/{user_id}",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        stats = data.get("stats", {})
+        lines = [
+            f"📊 {user_id} 的待办统计：",
+            f"  📋 总计：{stats.get('total', 0)} 个",
+            f"  ⬜ 待办：{stats.get('pending', 0)} 个",
+            f"  🔄 进行中：{stats.get('in_progress', 0)} 个",
+            f"  ✅ 已完成：{stats.get('completed', 0)} 个",
+            f"  📅 今日待办：{stats.get('today', 0)} 个",
+            f"  ⚠️ 逾期未完成：{stats.get('overdue', 0)} 个",
+        ]
+        return "\n".join(lines)
+    except requests.exceptions.ConnectionError:
+        return "⚠️ 无法连接到学校数据库服务，请确认 Backend 已启动。"
+    except Exception as e:
+        return f"获取待办统计出错：{str(e)}"
+
+
+# ============================================================
 # 创建 Agent（带 LangGraph MemorySaver 自动记忆）
 # ============================================================
 
@@ -928,11 +1254,13 @@ tools = [
     get_weather, calculator, query_day_of_week, get_current_time,
     list_files, read_file, write_file,
     save_memory, recall_memory,
-    markdown_to_html, markdown_to_pdf,
+    markdown_to_html, markdown_to_pdf, use_python_pptx,
     query_student_schedule, query_course_info, query_class_students,
     query_student_info, query_room_info,
     query_teacher_students, query_free_room, query_course_students,
     query_all_teachers, query_all_enrollments,
+    add_todo, delete_todo, query_todos_by_date, query_user_todos,
+    update_todo_status, get_todo_stats,
 ]
 
 llm = ChatDeepSeek(
@@ -1261,6 +1589,7 @@ def _format_size(size_bytes: int) -> str:
 # ============================================================
 
 if __name__ == "__main__":
+
     def test(label: str, sid: str, msg: str, uname: str = "测试用户"):
         print(f"\n--- {label} ---")
         print(f"[User] {msg}")
@@ -1277,3 +1606,4 @@ if __name__ == "__main__":
     print(f"\n--- 会话 s1 共 {len(history)} 条消息 ---")
 
     print("\n✅ 测试完成！启动 API 服务请运行: python api.py")
+
