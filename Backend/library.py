@@ -84,7 +84,7 @@ def _seed_seats(conn: sqlite3.Connection):
         ("C", 3, "C区 三楼电子阅览区"),
     ]
     for area, floor, desc in configs:
-        for i in range(1, 21):
+        for i in range(1, 61 + floor * 20):
             seat_id = f"{area}-{i:03d}"
             seats.append((seat_id, area, floor, f"{desc} {i}号座"))
     conn.executemany(

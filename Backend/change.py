@@ -761,16 +761,15 @@ def process_line(line, index):
 
     # 生成学号
     student_id = f"{prefix}{cls_num:02d}{seq:02d}"
-    class_id = f"{pre}{cls_num:03d}" if index < 630 else (f"C001" if index < 673 else "C002")
+    class_id = f"{pre}{cls_num:03d}" if index < 630 else (f"C002" if index < 673 else "C001")
 
     # 密码：用姓名的拼音，加上取模（比如用 index 取模 13331，或其他）
     # 你原代码用的是 num_val % 13331，这里我们用 index 代替原编号
     pinyin_name = to_pinyin(name)
-    seed = randint(1, 12306)
     password = pinyin_name + f"{int(student_id)* 131 % 13331:04d}"  # 拼音+取模
     # 如果你需要哈希，可以取消下面注释并导入 hash_password
-    # from teacher import hash_password
-    # password = hash_password(password)
+    from teacher import hash_password
+    password = hash_password(password)
 
     # 固定 gpa 为 0.0
     gpa = 0.0
