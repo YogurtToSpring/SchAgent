@@ -1,126 +1,433 @@
 <template>
   <section class="admin-page">
-    <section class="content-panel">
-      <div class="section-heading">
-        <div>
-          <h2>班级管理</h2>
-          <p>维护班级、学生归属和教学组织。</p>
-        </div>
-      </div>
-
-      <form class="inline-form" @submit.prevent="addClass">
-        <input v-model="newClass.name" placeholder="班级名称，例如 软件工程2班" />
-        <input v-model="newClass.major" placeholder="专业，例如 软件工程" />
-        <input v-model="newClass.grade" placeholder="年级，例如 2024级" />
-        <button class="primary-action compact" type="submit">创建班级</button>
-      </form>
-
-      <div class="data-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>班级</th>
-              <th>年级</th>
-              <th>专业</th>
-              <th>班主任</th>
-              <th>学生数</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in classes" :key="item.id">
-              <td>{{ item.name }}</td>
-              <td>{{ item.grade }}</td>
-              <td>{{ item.major }}</td>
-              <td>{{ item.headTeacher }}</td>
-              <td>{{ countStudents(item.id) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <section v-if="activeModule === 'home'" class="admin-module-grid">
+      <article
+        v-for="module in modules"
+        :key="module.key"
+        class="admin-module-card"
+        @click="activeModule = module.key"
+      >
+        <span>{{ module.meta }}</span>
+        <strong>{{ module.title }}</strong>
+        <p>{{ module.desc }}</p>
+      </article>
     </section>
 
-    <section class="content-panel">
+    <section v-else class="content-panel admin-subpage">
       <div class="section-heading">
         <div>
-          <h2>学生班级分配</h2>
-          <p>调整学生所属班级后，课表和助手上下文同步更新。</p>
+          <button class="ghost-action compact" type="button" @click="goHome">返回</button>
+          <h2>{{ currentModule.title }}</h2>
+          <p>{{ currentModule.desc }}</p>
         </div>
       </div>
 
-      <div class="data-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>姓名</th>
-              <th>学号</th>
-              <th>当前班级</th>
-              <th>调整班级</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="student in students" :key="student.id">
-              <td>{{ student.name }}</td>
-              <td>{{ student.studentNo }}</td>
-              <td>{{ className(student.classId) }}</td>
-              <td>
-                <select :value="student.classId" @change="assignStudent(student.id, $event.target.value)">
-                  <option v-for="item in classes" :key="item.id" :value="item.id">
-                    {{ item.name }}
-                  </option>
-                </select>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+      <template v-if="activeModule === 'classes'">
+        <form v-if="isAdmin" class="structured-form class-create-form" @submit.prevent="addClass">
+          <label>
+            班级号
+            <input v-model="newClass.classId" placeholder="例如 SE2024-1" />
+          </label>
+          <label>
+            班级名称
+            <input v-model="newClass.name" placeholder="例如 软件工程1班" />
+          </label>
+          <label>
+            年级
+            <input v-model="newClass.grade" placeholder="例如 2024级" />
+          </label>
+          <label>
+            专业
+            <input v-model="newClass.major" placeholder="例如 软件工程" />
+          </label>
+          <label>
+            容量
+            <input v-model.number="newClass.capacity" min="1" type="number" />
+          </label>
+          <label class="search-field">
+            班主任
+            <input v-model="newClass.teacherQuery" placeholder="搜索教师姓名或工号" />
+            <div v-if="teacherSuggestions(newClass.teacherQuery).length" class="search-suggestions">
+              <button
+                v-for="teacher in teacherSuggestions(newClass.teacherQuery)"
+                :key="teacher.teacherNo"
+                type="button"
+                @click="newClass.teacherQuery = formatTeacher(teacher)"
+              >
+                {{ formatTeacher(teacher) }}
+              </button>
+            </div>
+          </label>
+          <button class="primary-action compact" type="submit">确认创建</button>
+        </form>
 
-    <section class="content-panel">
-      <div class="section-heading">
-        <div>
-          <h2>课表导入与调整</h2>
-          <p>维护课程、教师、教室和周次。</p>
+        <div class="filter-bar">
+          <input v-model="classFilters.keyword" placeholder="搜索班级号、班级名、班主任" />
+          <input v-model="classFilters.grade" placeholder="按年级筛选" />
+          <input v-model="classFilters.major" placeholder="按专业筛选" />
         </div>
-      </div>
 
-      <form class="course-form" @submit.prevent="addCourse">
-        <input v-model="newCourse.courseId" placeholder="课程编号，例如 123456" />
-        <select v-model="newCourse.classId">
-          <option v-for="item in classes" :key="item.id" :value="item.id">{{ item.name }}</option>
-        </select>
-        <input v-model="newCourse.courseName" placeholder="课程名称" />
-        <select v-if="teachers.length" v-model="newCourse.teacher">
-          <option v-for="teacher in teachers" :key="teacher.teacherNo" :value="teacher.teacherNo">
-            {{ teacher.name }}（{{ teacher.teacherNo }}）
-          </option>
-        </select>
-        <input v-else v-model="newCourse.teacher" placeholder="任课教师编号" />
-        <select v-model="newCourse.weekday">
-          <option>周一</option>
-          <option>周二</option>
-          <option>周三</option>
-          <option>周四</option>
-          <option>周五</option>
-        </select>
-        <input v-model="newCourse.startTime" placeholder="开始时间 08:00" />
-        <input v-model="newCourse.endTime" placeholder="结束时间 09:40" />
-        <select v-if="rooms.length" v-model="newCourse.roomId">
-          <option v-for="room in rooms" :key="room.roomFull" :value="room.roomFull">
-            {{ room.label }}
-          </option>
-        </select>
-        <input v-else v-model="newCourse.roomId" placeholder="教室，例如 3-3-301" />
-        <input v-model="newCourse.weekStart" placeholder="起始周 1" />
-        <input v-model="newCourse.weekEnd" placeholder="结束周 16" />
-        <input v-model="newCourse.semester" placeholder="学期 2025-2026-2" />
-        <button class="primary-action compact" type="submit">添加课程</button>
-      </form>
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>班级号</th>
+                <th>班级名称</th>
+                <th>年级</th>
+                <th>专业</th>
+                <th>班主任</th>
+                <th>容量</th>
+                <th>学生数</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in pagedClasses" :key="item.id">
+                <td>{{ item.id }}</td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.grade }}</td>
+                <td>{{ item.major }}</td>
+                <td>{{ item.headTeacher }}</td>
+                <td>{{ item.capacity || '-' }}</td>
+                <td>{{ classStudents(item.id).length }}</td>
+                <td>
+                  <button class="ghost-action compact" type="button" @click="selectedClassId = item.id">查看学生</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination-bar">
+          <span>第 {{ classFilters.page }} / {{ classTotalPages }} 页，共 {{ filteredClasses.length }} 条</span>
+          <div>
+            <button class="ghost-action compact" type="button" :disabled="classFilters.page <= 1" @click="classFilters.page--">上一页</button>
+            <button class="ghost-action compact" type="button" :disabled="classFilters.page >= classTotalPages" @click="classFilters.page++">下一页</button>
+          </div>
+        </div>
+
+        <section v-if="selectedClass" class="detail-panel">
+          <div class="section-heading">
+            <div>
+              <h2>{{ selectedClass.name }}</h2>
+              <p>{{ selectedClass.id }} · {{ classStudents(selectedClass.id).length }} 名学生</p>
+            </div>
+            <button class="ghost-action compact" type="button" @click="prepareClassNotice(selectedClass)">发送通知</button>
+          </div>
+
+          <div class="data-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>班级</th>
+                  <th>学生</th>
+                  <th>学号</th>
+                  <th>总绩点</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="student in classStudents(selectedClass.id)" :key="student.id">
+                  <td>{{ selectedClass.name }}</td>
+                  <td>{{ student.name }}</td>
+                  <td>{{ student.studentNo }}</td>
+                  <td>{{ studentGpa(student) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+
+      <template v-else-if="activeModule === 'students' && isAdmin">
+        <div class="filter-bar">
+          <input v-model="studentFilters.keyword" placeholder="搜索姓名、学号、当前班级" />
+          <input v-model="studentFilters.targetClass" placeholder="搜索目标班级号或班级名" />
+        </div>
+
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>姓名</th>
+                <th>学号</th>
+                <th>当前班级</th>
+                <th>调整班级</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="student in pagedStudents" :key="student.id">
+                <td>{{ student.name }}</td>
+                <td>{{ student.studentNo }}</td>
+                <td>{{ className(student.classId) }}</td>
+                <td>
+                  <div class="inline-search">
+                    <input
+                      :value="classQueries[student.id] ?? studentFilters.targetClass"
+                      placeholder="搜索班级后确认调整"
+                      @input="classQueries[student.id] = $event.target.value"
+                    />
+                    <div v-if="studentClassSuggestions(student).length" class="search-suggestions">
+                      <button
+                        v-for="item in studentClassSuggestions(student)"
+                        :key="item.id"
+                        type="button"
+                        @click="confirmAssignStudent(student, item)"
+                      >
+                        {{ item.id }} · {{ item.name }}
+                      </button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination-bar">
+          <span>第 {{ studentFilters.page }} / {{ studentTotalPages }} 页，共 {{ filteredStudents.length }} 条</span>
+          <div>
+            <button class="ghost-action compact" type="button" :disabled="studentFilters.page <= 1" @click="studentFilters.page--">上一页</button>
+            <button class="ghost-action compact" type="button" :disabled="studentFilters.page >= studentTotalPages" @click="studentFilters.page++">下一页</button>
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="activeModule === 'accounts' && isAdmin">
+        <form class="structured-form account-import-form" @submit.prevent="stageStudent">
+          <label>
+            姓名
+            <input v-model="studentDraft.name" placeholder="例如 张三" />
+          </label>
+          <label>
+            学号
+            <input v-model="studentDraft.studentNo" placeholder="例如 2024001" />
+          </label>
+          <label class="search-field">
+            班级
+            <input v-model="studentDraft.classQuery" placeholder="搜索班级号或班级名" />
+            <div v-if="classSuggestions(studentDraft.classQuery).length" class="search-suggestions">
+              <button
+                v-for="item in classSuggestions(studentDraft.classQuery)"
+                :key="item.id"
+                type="button"
+                @click="studentDraft.classQuery = formatClass(item)"
+              >
+                {{ formatClass(item) }}
+              </button>
+            </div>
+          </label>
+          <label>
+            初始密码
+            <input v-model="studentDraft.password" placeholder="默认 123456" />
+          </label>
+          <button class="primary-action compact" type="submit">加入待导入</button>
+        </form>
+
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>姓名</th>
+                <th>学号</th>
+                <th>班级</th>
+                <th>初始密码</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in pendingStudents" :key="row.studentNo">
+                <td>{{ row.name }}</td>
+                <td>{{ row.studentNo }}</td>
+                <td>{{ className(row.classId) }}</td>
+                <td>{{ row.password }}</td>
+                <td><button class="ghost-action compact" type="button" @click="removePendingStudent(row.studentNo)">移除</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-actions">
+          <button class="primary-action compact" type="button" :disabled="!pendingStudents.length" @click="confirmImportStudents">
+            确认导入账号
+          </button>
+        </div>
+
+        <div v-if="studentImportResult" class="import-result">
+          <strong>成功 {{ studentImportResult.success }} 条，失败 {{ studentImportResult.failed }} 条</strong>
+          <span v-for="message in studentImportResult.messages.slice(0, 6)" :key="message">{{ message }}</span>
+        </div>
+      </template>
+
+      <template v-else-if="activeModule === 'courses'">
+        <form v-if="isAdmin" class="structured-form course-import-form" @submit.prevent="addCourse">
+          <label>
+            课程编号
+            <input v-model="newCourse.courseId" placeholder="例如 123456" />
+          </label>
+          <label>
+            课程名称
+            <input v-model="newCourse.courseName" placeholder="例如 数据库原理" />
+          </label>
+          <label class="search-field">
+            面向班级
+            <input v-model="newCourse.classQuery" placeholder="搜索班级号或班级名" />
+            <div v-if="classSuggestions(newCourse.classQuery).length" class="search-suggestions">
+              <button
+                v-for="item in classSuggestions(newCourse.classQuery)"
+                :key="item.id"
+                type="button"
+                @click="newCourse.classQuery = formatClass(item)"
+              >
+                {{ formatClass(item) }}
+              </button>
+            </div>
+          </label>
+          <label class="search-field">
+            任课教师
+            <input v-model="newCourse.teacherQuery" placeholder="搜索教师姓名或工号" />
+            <div v-if="teacherSuggestions(newCourse.teacherQuery).length" class="search-suggestions">
+              <button
+                v-for="teacher in teacherSuggestions(newCourse.teacherQuery)"
+                :key="teacher.teacherNo"
+                type="button"
+                @click="newCourse.teacherQuery = formatTeacher(teacher)"
+              >
+                {{ formatTeacher(teacher) }}
+              </button>
+            </div>
+          </label>
+          <label>
+            星期
+            <input v-model="newCourse.weekday" placeholder="例如 周一" />
+          </label>
+          <label>
+            开始时间
+            <input v-model="newCourse.startTime" placeholder="08:00" />
+          </label>
+          <label>
+            结束时间
+            <input v-model="newCourse.endTime" placeholder="09:40" />
+          </label>
+          <label class="search-field">
+            地点
+            <input v-model="newCourse.roomQuery" placeholder="搜索教室，如 3-3-301" />
+            <div v-if="roomSuggestions(newCourse.roomQuery).length" class="search-suggestions">
+              <button
+                v-for="room in roomSuggestions(newCourse.roomQuery)"
+                :key="room.roomFull"
+                type="button"
+                @click="newCourse.roomQuery = room.roomFull"
+              >
+                {{ room.label }}
+              </button>
+            </div>
+          </label>
+          <label>
+            起始周
+            <input v-model="newCourse.weekStart" placeholder="1" />
+          </label>
+          <label>
+            结束周
+            <input v-model="newCourse.weekEnd" placeholder="16" />
+          </label>
+          <label>
+            学期
+            <input v-model="newCourse.semester" placeholder="2025-2026-2" />
+          </label>
+          <label>
+            学分
+            <input v-model="newCourse.credit" placeholder="2" type="number" min="0" step="0.5" />
+          </label>
+          <button class="primary-action compact" type="submit">确认添加课程</button>
+        </form>
+
+        <div class="filter-bar">
+          <input v-model="courseFilters.keyword" placeholder="搜索课程号、课程名、班级、教师" />
+          <input v-model="courseFilters.semester" placeholder="按学期筛选" />
+        </div>
+
+        <div class="course-card-list">
+          <article
+            v-for="course in filteredCourses"
+            :key="course.id"
+            class="course-manage-card"
+            :class="{ active: selectedCourseKey === course.id }"
+            @click="selectedCourseKey = course.id"
+          >
+            <span>{{ course.backendCourseId || course.courseId || course.id }}</span>
+            <strong>{{ course.courseName }}</strong>
+            <p>{{ className(course.classId) }} · {{ course.teacher }} · {{ course.semester || '未设置学期' }}</p>
+          </article>
+        </div>
+
+        <section v-if="selectedCourse" class="detail-panel">
+          <div class="section-heading">
+            <div>
+              <h2>{{ selectedCourse.courseName }}</h2>
+              <p>{{ className(selectedCourse.classId) }} · {{ selectedCourse.weekday }} {{ selectedCourse.startTime }}-{{ selectedCourse.endTime }}</p>
+            </div>
+            <button class="ghost-action compact" type="button" @click="prepareCourseNotice(selectedCourse)">发送通知</button>
+          </div>
+
+          <div class="data-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>学生</th>
+                  <th>学号</th>
+                  <th>平时分</th>
+                  <th>期末分</th>
+                  <th>绩点</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="student in courseStudents(selectedCourse)" :key="student.studentNo">
+                  <td>{{ student.name }}</td>
+                  <td>{{ student.studentNo }}</td>
+                  <td><input v-model="gradeEdit(selectedCourse, student).usual" class="table-input" type="number" min="0" max="100" /></td>
+                  <td><input v-model="gradeEdit(selectedCourse, student).final" class="table-input" type="number" min="0" max="100" /></td>
+                  <td>{{ gradePointPreview(selectedCourse, student) }}</td>
+                  <td><input v-model="gradeEdit(selectedCourse, student).remark" class="table-input" /></td>
+                  <td>
+                    <button class="primary-action compact" type="button" @click="confirmSaveCourseGrade(selectedCourse, student)">
+                      保存
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+
+      <section v-if="noticeTarget" class="detail-panel">
+        <div class="section-heading">
+          <div>
+            <h2>发送通知</h2>
+            <p>{{ noticeTarget.label }}</p>
+          </div>
+          <button class="ghost-action compact" type="button" @click="noticeTarget = null">关闭</button>
+        </div>
+        <form class="structured-form notice-compose-form" @submit.prevent="sendNotice">
+          <label>
+            标题
+            <input v-model="noticeDraft.title" placeholder="通知标题" />
+          </label>
+          <label>
+            内容
+            <input v-model="noticeDraft.content" placeholder="通知内容" />
+          </label>
+          <button class="primary-action compact" type="submit">确认发送</button>
+        </form>
+      </section>
     </section>
   </section>
 </template>
 
 <script setup>
-import { reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 const props = defineProps({
   classes: {
@@ -139,122 +446,530 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  courses: {
+    type: Array,
+    default: () => []
+  },
+  grades: {
+    type: Array,
+    default: () => []
+  },
   currentUser: {
     type: Object,
     required: true
+  },
+  studentImportResult: {
+    type: Object,
+    default: null
   }
 })
 
-const emit = defineEmits(['add-class', 'assign-student', 'add-course'])
+const emit = defineEmits([
+  'add-class',
+  'assign-student',
+  'add-course',
+  'import-students',
+  'save-grade',
+  'send-notification'
+])
+
+const pageSize = 8
+const GRADE_DRAFT_STORAGE_KEY = 'campusflow.courseGradeDrafts'
+const activeModule = ref('home')
+const selectedClassId = ref('')
+const selectedCourseKey = ref('')
+const pendingStudents = ref([])
+const noticeTarget = ref(null)
+const classQueries = reactive({})
+const storedGradeDrafts = reactive(loadStoredGradeDrafts())
+const gradeEdits = reactive({})
+
+const isAdmin = computed(() => props.currentUser.role === 'admin')
+const isTeacher = computed(() => props.currentUser.role === 'teacher')
+
+const modules = computed(() => {
+  if (isAdmin.value) {
+    return [
+      { key: 'classes', title: '班级模块', meta: 'CLASS', desc: '创建班级、检索班级、查看班级学生并发送通知。' },
+      { key: 'students', title: '学生班级分配', meta: 'STUDENT', desc: '按姓名或学号搜索学生，并通过搜索调整班级。' },
+      { key: 'accounts', title: '学生账号导入', meta: 'ACCOUNT', desc: '逐项填写账号信息，确认后批量注册学生。' },
+      { key: 'courses', title: '课程模块', meta: 'COURSE', desc: '维护课程并在课程详情中管理学生成绩。' }
+    ]
+  }
+
+  return [
+    { key: 'classes', title: '我的班级', meta: 'CLASS', desc: '查看自己作为班主任负责的班级和学生绩点。' },
+    { key: 'courses', title: '我的课程', meta: 'COURSE', desc: '查看自己所教课程、学生名单并录入成绩。' }
+  ]
+})
+
+const classFilters = reactive({
+  keyword: '',
+  grade: '',
+  major: '',
+  page: 1
+})
+
+const studentFilters = reactive({
+  keyword: '',
+  targetClass: '',
+  page: 1
+})
+
+const courseFilters = reactive({
+  keyword: '',
+  semester: ''
+})
 
 const newClass = reactive({
+  classId: '',
   name: '',
+  grade: '2024级',
   major: '',
-  grade: '2024级'
+  capacity: 45,
+  teacherQuery: ''
+})
+
+const studentDraft = reactive({
+  name: '',
+  studentNo: '',
+  classQuery: '',
+  password: '123456'
 })
 
 const newCourse = reactive({
   courseId: nextCourseId(),
-  classId: props.classes[0]?.id || '',
   courseName: '',
-  teacher: defaultTeacherNo(),
+  classQuery: '',
+  teacherQuery: '',
   weekday: '周一',
   startTime: '08:00',
   endTime: '09:40',
-  roomId: props.rooms[0]?.roomFull || '3-3-301',
+  roomQuery: '',
   weekStart: '1',
   weekEnd: '16',
-  semester: '2025-2026-2'
+  semester: '2025-2026-2',
+  credit: '2'
 })
+
+const noticeDraft = reactive({
+  title: '',
+  content: ''
+})
+
+const currentModule = computed(() => modules.value.find(item => item.key === activeModule.value) || modules.value[0])
+
+const manageableClasses = computed(() => {
+  if (isAdmin.value) return props.classes
+  return props.classes.filter(item => isTeacherHeadOfClass(item))
+})
+
+const filteredClasses = computed(() => {
+  const keyword = normalize(classFilters.keyword)
+  const grade = normalize(classFilters.grade)
+  const major = normalize(classFilters.major)
+  return manageableClasses.value.filter(item => {
+    const matchesKeyword = !keyword || [item.id, item.name, item.headTeacher, item.masterId].some(value => normalize(value).includes(keyword))
+    const matchesGrade = !grade || normalize(item.grade).includes(grade)
+    const matchesMajor = !major || normalize(item.major).includes(major)
+    return matchesKeyword && matchesGrade && matchesMajor
+  })
+})
+
+const pagedClasses = computed(() => paginate(filteredClasses.value, classFilters.page))
+const classTotalPages = computed(() => totalPages(filteredClasses.value.length))
+
+const selectedClass = computed(() => manageableClasses.value.find(item => item.id === selectedClassId.value))
+
+const filteredStudents = computed(() => {
+  const keyword = normalize(studentFilters.keyword)
+  return props.students.filter(student => {
+    if (!keyword) return true
+    return [student.name, student.studentNo, student.classId, className(student.classId)].some(value => normalize(value).includes(keyword))
+  })
+})
+
+const pagedStudents = computed(() => paginate(filteredStudents.value, studentFilters.page))
+const studentTotalPages = computed(() => totalPages(filteredStudents.value.length))
+
+const manageableCourses = computed(() => {
+  if (isAdmin.value) return props.courses
+  return props.courses.filter(course => isTeacherCourse(course))
+})
+
+const filteredCourses = computed(() => {
+  const keyword = normalize(courseFilters.keyword)
+  const semester = normalize(courseFilters.semester)
+  return manageableCourses.value.filter(course => {
+    const matchesKeyword = !keyword || [
+      course.id,
+      course.backendCourseId,
+      course.courseId,
+      course.courseName,
+      course.teacher,
+      course.teacherNo,
+      course.classId,
+      className(course.classId)
+    ].some(value => normalize(value).includes(keyword))
+    const matchesSemester = !semester || normalize(course.semester).includes(semester)
+    return matchesKeyword && matchesSemester
+  })
+})
+
+const selectedCourse = computed(() => filteredCourses.value.find(course => course.id === selectedCourseKey.value))
+
+watch(
+  () => [classFilters.keyword, classFilters.grade, classFilters.major],
+  () => {
+    classFilters.page = 1
+  }
+)
+
+watch(
+  () => studentFilters.keyword,
+  () => {
+    studentFilters.page = 1
+  }
+)
+
+watch(
+  () => props.teachers,
+  () => {
+    if (!newClass.teacherQuery) newClass.teacherQuery = props.teachers[0] ? formatTeacher(props.teachers[0]) : ''
+    if (!newCourse.teacherQuery) {
+      const currentTeacher = props.teachers.find(item => item.teacherNo === props.currentUser.teacherNo)
+      newCourse.teacherQuery = currentTeacher ? formatTeacher(currentTeacher) : props.currentUser.teacherNo || props.currentUser.name || ''
+    }
+  },
+  { immediate: true }
+)
 
 watch(
   () => props.classes,
+  () => {
+    if (!studentDraft.classQuery) studentDraft.classQuery = props.classes[0] ? formatClass(props.classes[0]) : ''
+    if (!newCourse.classQuery) newCourse.classQuery = props.classes[0] ? formatClass(props.classes[0]) : ''
+    if (!selectedClassId.value && manageableClasses.value[0]) selectedClassId.value = manageableClasses.value[0].id
+  },
+  { immediate: true }
+)
+
+watch(
+  () => manageableCourses.value,
   value => {
-    if (!newCourse.classId && value[0]?.id) {
-      newCourse.classId = value[0].id
-    }
+    if (!selectedCourseKey.value && value[0]) selectedCourseKey.value = value[0].id
   },
   { immediate: true }
 )
 
 watch(
   () => props.rooms,
-  value => {
-    if (value[0]?.roomFull && (!newCourse.roomId || newCourse.roomId === '3-3-301')) {
-      newCourse.roomId = value[0].roomFull
-    }
+  () => {
+    if (!newCourse.roomQuery) newCourse.roomQuery = props.rooms[0]?.roomFull || '3-3-301'
   },
   { immediate: true }
 )
 
-watch(
-  () => props.teachers,
-  () => {
-    if (!newCourse.teacher) {
-      newCourse.teacher = defaultTeacherNo()
-    }
-  },
-  { immediate: true }
-)
+function goHome() {
+  activeModule.value = 'home'
+  noticeTarget.value = null
+}
 
 function addClass() {
-  if (!newClass.name.trim()) return
+  const classId = newClass.classId.trim() || newClass.name.trim()
+  const name = newClass.name.trim() || classId
+  const masterId = resolveTeacherNo(newClass.teacherQuery)
+  if (!classId || !name || !masterId) return
+  if (!window.confirm(`确认创建班级 ${name}（${classId}）？`)) return
   emit('add-class', {
-    classId: newClass.name.trim(),
-    name: newClass.name.trim(),
+    classId,
+    name,
     major: newClass.major.trim() || '未设置',
     grade: newClass.grade.trim() || '2024级',
-    headTeacher: props.currentUser.name,
-    headTeacherNo: props.currentUser.teacherNo,
-    teacherNo: props.currentUser.teacherNo,
-    masterId: props.currentUser.teacherNo,
-    capacity: 45
+    headTeacherNo: masterId,
+    teacherNo: masterId,
+    masterId,
+    capacity: Number(newClass.capacity) || 45
   })
+  newClass.classId = ''
   newClass.name = ''
   newClass.major = ''
 }
 
-function assignStudent(studentId, classId) {
-  emit('assign-student', { studentId, classId })
+function confirmAssignStudent(student, targetClass) {
+  if (!targetClass?.id || targetClass.id === student.classId) return
+  if (!window.confirm(`确认将 ${student.name}（${student.studentNo}）调整到 ${targetClass.name}？`)) return
+  emit('assign-student', { studentId: student.id, classId: targetClass.id })
+  classQueries[student.id] = ''
+}
+
+function stageStudent() {
+  const classId = resolveClassId(studentDraft.classQuery)
+  if (!studentDraft.name.trim() || !studentDraft.studentNo.trim() || !classId) return
+  pendingStudents.value.push({
+    name: studentDraft.name.trim(),
+    studentNo: studentDraft.studentNo.trim(),
+    classId,
+    password: studentDraft.password || '123456'
+  })
+  studentDraft.name = ''
+  studentDraft.studentNo = ''
+}
+
+function removePendingStudent(studentNo) {
+  pendingStudents.value = pendingStudents.value.filter(item => item.studentNo !== studentNo)
+}
+
+function confirmImportStudents() {
+  if (!pendingStudents.value.length) return
+  if (!window.confirm(`确认导入 ${pendingStudents.value.length} 个学生账号？`)) return
+  emit('import-students', pendingStudents.value)
+  pendingStudents.value = []
 }
 
 function addCourse() {
-  const teacherNum = newCourse.teacher.trim() || defaultTeacherNo()
-  if (!newCourse.classId || !newCourse.courseId.trim() || !newCourse.courseName.trim() || !teacherNum) return
+  const classId = resolveClassId(newCourse.classQuery)
+  const teacherNum = resolveTeacherNo(newCourse.teacherQuery)
+  const roomId = newCourse.roomQuery.trim() || '3-3-301'
+  if (!newCourse.courseId.trim() || !newCourse.courseName.trim() || !classId || !teacherNum) return
+  if (!window.confirm(`确认添加课程 ${newCourse.courseName} 到 ${className(classId)}？`)) return
   emit('add-course', {
-    ...newCourse,
     courseId: newCourse.courseId.trim(),
+    classId,
     courseName: newCourse.courseName.trim(),
     teacher: teacherNum,
     teacherNum,
-    roomId: newCourse.roomId.trim() || '3-3-301',
-    location: newCourse.roomId.trim() || '3-3-301',
+    weekday: newCourse.weekday.trim() || '周一',
+    startTime: newCourse.startTime.trim() || '08:00',
+    endTime: newCourse.endTime.trim() || '09:40',
+    roomId,
+    location: roomId,
     weekStart: Number(newCourse.weekStart) || 1,
     weekEnd: Number(newCourse.weekEnd) || 16,
     semester: newCourse.semester.trim() || '2025-2026-2',
+    credit: Number(newCourse.credit) || 0,
     weeks: `${Number(newCourse.weekStart) || 1}-${Number(newCourse.weekEnd) || 16}周`
   })
   newCourse.courseId = nextCourseId()
   newCourse.courseName = ''
-  newCourse.teacher = defaultTeacherNo()
-  newCourse.weekStart = '1'
-  newCourse.weekEnd = '16'
 }
 
-function countStudents(classId) {
-  return props.students.filter(item => item.classId === classId).length
+function confirmSaveCourseGrade(course, student) {
+  const edit = gradeEdit(course, student)
+  if (!window.confirm(`确认保存 ${student.name} 的 ${course.courseName} 成绩？`)) return
+  persistGradeDraft(course, student, edit)
+  emit('save-grade', {
+    courseId: course.backendCourseId || course.courseId || course.id,
+    studentNo: student.studentNo,
+    score: Number(edit.final || 0),
+    semester: course.semester || '2025-2026-2',
+    examType: '期末考试',
+    remark: edit.remark || ''
+  })
+}
+
+function prepareClassNotice(targetClass) {
+  noticeTarget.value = {
+    type: 'class',
+    classId: targetClass.id,
+    label: `${targetClass.name} 全班学生`
+  }
+  noticeDraft.title = `${targetClass.name} 通知`
+  noticeDraft.content = ''
+}
+
+function prepareCourseNotice(course) {
+  noticeTarget.value = {
+    type: 'course',
+    classId: course.classId,
+    courseId: course.backendCourseId || course.courseId || course.id,
+    label: `${course.courseName} 课程学生`
+  }
+  noticeDraft.title = `${course.courseName} 课程通知`
+  noticeDraft.content = ''
+}
+
+function sendNotice() {
+  if (!noticeTarget.value || !noticeDraft.title.trim()) return
+  if (!window.confirm(`确认向 ${noticeTarget.value.label} 发送通知？`)) return
+  emit('send-notification', {
+    ...noticeTarget.value,
+    title: noticeDraft.title.trim(),
+    content: noticeDraft.content.trim()
+  })
+  noticeTarget.value = null
+  noticeDraft.title = ''
+  noticeDraft.content = ''
+}
+
+function gradeEdit(course, student) {
+  const key = gradeKey(course, student)
+  if (!gradeEdits[key]) {
+    const grade = findGrade(course, student)
+    const stored = storedGradeDrafts[key] || {}
+    gradeEdits[key] = {
+      usual: stored.usual ?? grade?.usual ?? grade?.usualScore ?? '',
+      final: grade?.final ?? grade?.finalScore ?? grade?.score ?? stored.final ?? '',
+      remark: grade?.remark ?? stored.remark ?? ''
+    }
+  }
+  return gradeEdits[key]
+}
+
+function gradePointPreview(course, student) {
+  const edit = gradeEdit(course, student)
+  if (edit.final !== '' && edit.final != null) {
+    return scoreToGradePoint(Number(edit.final || 0)).toFixed(2)
+  }
+  const grade = findGrade(course, student)
+  if (grade?.gradePoint != null) return Number(grade.gradePoint).toFixed(2)
+  return '-'
+}
+
+function findGrade(course, student) {
+  const courseId = String(course.backendCourseId || course.courseId || course.id || '')
+  return props.grades.find(grade => {
+    const sameStudent = grade.studentNo === student.studentNo
+    const sameCourse = String(grade.courseId || grade.backendCourseId || '') === courseId || grade.courseName === course.courseName
+    return sameStudent && sameCourse
+  })
+}
+
+function gradeKey(course, student) {
+  return `${course.backendCourseId || course.courseId || course.id}-${student.studentNo}`
+}
+
+function persistGradeDraft(course, student, edit) {
+  const key = gradeKey(course, student)
+  storedGradeDrafts[key] = {
+    usual: edit.usual ?? '',
+    final: edit.final ?? '',
+    remark: edit.remark ?? ''
+  }
+  saveStoredGradeDrafts(storedGradeDrafts)
+}
+
+function loadStoredGradeDrafts() {
+  try {
+    return JSON.parse(localStorage.getItem(GRADE_DRAFT_STORAGE_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function saveStoredGradeDrafts(value) {
+  localStorage.setItem(GRADE_DRAFT_STORAGE_KEY, JSON.stringify(value))
+}
+
+function classStudents(classId) {
+  return props.students.filter(item => item.classId === classId)
+}
+
+function courseStudents(course) {
+  return classStudents(course.classId)
+}
+
+function studentGpa(student) {
+  if (student.gpa != null && Number(student.gpa) > 0) return Number(student.gpa).toFixed(2)
+  const rows = props.grades.filter(grade => grade.studentNo === student.studentNo && grade.gradePoint != null)
+  if (!rows.length) return '-'
+  const avg = rows.reduce((sum, grade) => sum + Number(grade.gradePoint || 0), 0) / rows.length
+  return avg.toFixed(2)
+}
+
+function isTeacherHeadOfClass(item) {
+  const teacherNo = props.currentUser.teacherNo || props.currentUser.username
+  const teacherName = props.currentUser.name
+  return item.masterId === teacherNo || item.headTeacherNo === teacherNo || item.teacherNo === teacherNo || item.headTeacher === teacherName
+}
+
+function isTeacherCourse(course) {
+  const teacherNo = props.currentUser.teacherNo || props.currentUser.username
+  const teacherName = props.currentUser.name
+  return course.teacherNo === teacherNo || course.teacherNum === teacherNo || course.teacher === teacherName
+}
+
+function teacherSuggestions(query) {
+  const keyword = normalize(query)
+  if (!keyword) return props.teachers.slice(0, 5)
+  return props.teachers
+    .filter(teacher => [teacher.name, teacher.teacherNo].some(value => normalize(value).includes(keyword)))
+    .slice(0, 5)
+}
+
+function classSuggestions(query) {
+  const keyword = normalize(query)
+  if (!keyword) return props.classes.slice(0, 5)
+  return props.classes
+    .filter(item => [item.id, item.name, item.grade, item.major].some(value => normalize(value).includes(keyword)))
+    .slice(0, 5)
+}
+
+function studentClassSuggestions(student) {
+  const query = classQueries[student.id] ?? studentFilters.targetClass
+  return classSuggestions(query).filter(item => item.id !== student.classId)
+}
+
+function roomSuggestions(query) {
+  const keyword = normalize(query)
+  if (!keyword) return props.rooms.slice(0, 5)
+  return props.rooms
+    .filter(room => [room.roomFull, room.label, room.area, room.building].some(value => normalize(value).includes(keyword)))
+    .slice(0, 5)
+}
+
+function resolveTeacherNo(value) {
+  const text = String(value || '').trim()
+  const matched = props.teachers.find(teacher => teacher.teacherNo === text || formatTeacher(teacher) === text || teacher.name === text)
+  return matched?.teacherNo || text
+}
+
+function resolveClassId(value) {
+  const text = String(value || '').trim()
+  const matched = props.classes.find(item => item.id === text || item.name === text || formatClass(item) === text)
+  return matched?.id || text
+}
+
+function formatTeacher(teacher) {
+  return `${teacher.teacherNo} · ${teacher.name}`
+}
+
+function formatClass(item) {
+  return `${item.id} · ${item.name}`
 }
 
 function className(classId) {
-  return props.classes.find(item => item.id === classId)?.name || '未分配'
+  return props.classes.find(item => item.id === classId)?.name || classId || '未分配'
+}
+
+function paginate(rows, page) {
+  const safePage = Math.max(1, Math.min(page, Math.max(1, Math.ceil(rows.length / pageSize))))
+  const start = (safePage - 1) * pageSize
+  return rows.slice(start, start + pageSize)
+}
+
+function totalPages(total) {
+  return Math.max(1, Math.ceil(total / pageSize))
+}
+
+function scoreToGradePoint(score) {
+  if (score >= 90) return 4.0
+  if (score >= 85) return 3.7
+  if (score >= 82) return 3.3
+  if (score >= 78) return 3.0
+  if (score >= 75) return 2.7
+  if (score >= 72) return 2.3
+  if (score >= 68) return 2.0
+  if (score >= 64) return 1.5
+  if (score >= 60) return 1.0
+  return 0
 }
 
 function nextCourseId() {
   return String(Date.now()).slice(-9)
 }
 
-function defaultTeacherNo() {
-  if (props.currentUser.role === 'teacher') return props.currentUser.teacherNo || ''
-  return props.teachers[0]?.teacherNo || ''
+function normalize(value) {
+  return String(value || '').trim().toLowerCase()
 }
 </script>

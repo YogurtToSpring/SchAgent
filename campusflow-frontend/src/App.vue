@@ -12,7 +12,7 @@
     v-else
     :current-user="currentUser"
     :active-view="activeView"
-    @navigate="activeView = $event"
+    @navigate="handleNavigate"
     @logout="logout"
   >
     <DashboardPage
@@ -23,10 +23,10 @@
       :courses="courses"
       :weather="weather"
       :todos="todos"
-      :notifications="notifications"
+      :notifications="visibleNotifications"
       :reservations="reservations"
       :grades="grades"
-      @navigate="activeView = $event"
+      @navigate="handleNavigate"
     />
 
     <ProfilePage
@@ -38,21 +38,29 @@
     <TodoPage
       v-show="activeView === 'todos'"
       :todos="todos"
+      :loading="todoLoading"
       @add-todo="addTodo"
       @toggle-todo="toggleTodo"
+      @delete-todo="deleteTodo"
     />
 
     <ClassAdminPage
-      v-if="currentUser.role === 'teacher' || currentUser.role === 'admin'"
+      v-if="currentUser.role === 'admin' || currentUser.role === 'teacher'"
       v-show="activeView === 'classes'"
       :classes="classes"
       :students="students"
       :teachers="teachers"
       :rooms="rooms"
+      :courses="courses"
+      :grades="grades"
       :current-user="currentUser"
+      :student-import-result="studentImportResult"
       @add-class="addClass"
       @assign-student="assignStudent"
       @add-course="addCourse"
+      @import-students="importStudents"
+      @save-grade="saveGrade"
+      @send-notification="sendNotification"
     />
 
     <SchedulePage
@@ -66,6 +74,12 @@
       v-show="activeView === 'grades'"
       :current-user="currentUser"
       :grades="grades"
+      :courses="courses"
+      :students="students"
+      :summary="gradeSummary"
+      :loading="gradeLoading"
+      @save-grade="saveGrade"
+      @refresh-grades="refreshGrades"
     />
 
     <LibraryPage
@@ -86,14 +100,14 @@
 
     <NotificationsPage
       v-show="activeView === 'notifications'"
-      :notifications="notifications"
+      :notifications="visibleNotifications"
       @mark-all-read="markAllNotificationsRead"
       @open-notice="openNotice"
     />
 
     <FileCenterPage
       v-show="activeView === 'files'"
-      :files="files"
+      :files="visibleFiles"
       @refresh-files="refreshFiles"
     />
 
@@ -104,6 +118,7 @@
       :students="students"
       :courses="courses"
       :weather="weather"
+      @todo-updated="refreshTodos"
     />
 
     <AdminCenterPage
@@ -114,7 +129,7 @@
       :courses="courses"
       :posts="forumPosts"
       :logs="systemLogs"
-      @navigate="activeView = $event"
+      @navigate="handleNavigate"
     />
 
     <div v-if="platformError" class="platform-alert" role="alert">
@@ -125,7 +140,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AdminCenterPage from './pages/AdminCenterPage.vue'
 import ChatPage from './pages/ChatPage.vue'
 import ClassAdminPage from './pages/ClassAdminPage.vue'
@@ -158,11 +173,18 @@ import {
   initialTodos
 } from './data/campusModules'
 import {
+  createTodoItem,
   createClass,
   createCourse,
+  deleteTodoItem,
   enrollStudent,
+  loadGradesForUser,
   loadRealtimeWeather,
   loadPlatformSnapshot,
+  loadTodosForUser,
+  registerStudentAccount,
+  saveGradeRecord,
+  updateTodoItemStatus,
   updateStudentClass
 } from './api/platform'
 import { listAgentFiles } from './api/files'
@@ -179,6 +201,7 @@ const rooms = ref([])
 const weather = ref(cloneData(weatherSnapshot))
 const todos = ref(cloneData(initialTodos))
 const grades = ref(cloneData(initialGrades))
+const gradeSummary = ref(null)
 const librarySeats = ref(cloneData(initialLibrarySeats))
 const reservations = ref(cloneData(initialReservations))
 const forumPosts = ref(cloneData(initialForumPosts))
@@ -186,7 +209,20 @@ const notifications = ref(cloneData(initialNotifications))
 const files = ref(cloneData(initialFiles))
 const systemLogs = ref(cloneData(initialSystemLogs))
 const platformError = ref('')
+const todoLoading = ref(false)
+const gradeLoading = ref(false)
+const studentImportResult = ref(null)
 const restoringSession = ref(true)
+
+const visibleNotifications = computed(() => {
+  if (!currentUser.value) return []
+  return notifications.value.filter(item => canCurrentUserSeeItem(item))
+})
+
+const visibleFiles = computed(() => {
+  if (!currentUser.value) return []
+  return files.value.filter(item => canCurrentUserSeeItem(item))
+})
 
 onMounted(() => {
   restoreLoginSession()
@@ -203,9 +239,20 @@ async function handleLogin(user) {
     platformError.value = '后端平台数据暂时不可用，当前使用本地缓存数据。'
   }
   saveLoginSession(currentUser.value)
+  await Promise.allSettled([refreshTodos(), refreshGrades()])
   refreshWeather()
   refreshFiles()
   activeView.value = 'dashboard'
+}
+
+function handleNavigate(view) {
+  if (!canAccessView(view)) {
+    activeView.value = 'dashboard'
+    return
+  }
+  activeView.value = view
+  if (view === 'todos') refreshTodos()
+  if (view === 'grades' || view === 'classes') refreshGrades()
 }
 
 function logout() {
@@ -215,18 +262,45 @@ function logout() {
   localStorage.removeItem(SESSION_STORAGE_KEY)
 }
 
-function addTodo(payload) {
-  todos.value.unshift({
-    id: `todo-${Date.now()}`,
-    status: 'pending',
-    ...payload
-  })
+async function addTodo(payload) {
+  const userId = backendUserId(currentUser.value)
+  if (!userId) return
+
+  try {
+    const todo = await createTodoItem(userId, {
+      ...payload,
+      date: toBackendDate(payload.date || payload.dueDate)
+    })
+    todos.value.unshift(todo)
+    platformError.value = ''
+  } catch (error) {
+    platformError.value = '新增待办失败，请确认后端待办接口可用且日期格式正确。'
+  }
 }
 
-function toggleTodo(todoId) {
+async function toggleTodo(todoId) {
   const todo = todos.value.find(item => item.id === todoId)
   if (!todo) return
-  todo.status = todo.status === 'done' ? 'pending' : 'done'
+  const nextStatus = todo.status === 'done' ? 'pending' : 'done'
+  try {
+    const updated = await updateTodoItemStatus(todo.backendId || todo.id, nextStatus)
+    Object.assign(todo, updated)
+    platformError.value = ''
+  } catch (error) {
+    platformError.value = '更新待办状态失败，请确认后端服务已启动。'
+  }
+}
+
+async function deleteTodo(todoId) {
+  const todo = todos.value.find(item => item.id === todoId)
+  if (!todo) return
+  try {
+    await deleteTodoItem(todo.backendId || todo.id)
+    todos.value = todos.value.filter(item => item.id !== todoId)
+    platformError.value = ''
+  } catch (error) {
+    platformError.value = '删除待办失败，请稍后重试。'
+  }
 }
 
 function reserveSeat(payload) {
@@ -250,7 +324,9 @@ function addPost(payload) {
     title: payload.status === 'review' ? '帖子已提交审核' : '帖子已发布',
     time: '刚刚',
     status: 'unread',
-    link: 'forum'
+    link: 'forum',
+    ownerId: backendUserId(currentUser.value),
+    audienceRoles: [currentUser.value?.role].filter(Boolean)
   })
 }
 
@@ -261,30 +337,50 @@ function reviewPost(postId) {
 }
 
 function markAllNotificationsRead() {
+  const visibleIds = new Set(visibleNotifications.value.map(item => item.id))
   notifications.value = notifications.value.map(item => ({
     ...item,
-    status: 'read'
+    status: visibleIds.has(item.id) ? 'read' : item.status
   }))
 }
 
 function openNotice(notice) {
   const target = notifications.value.find(item => item.id === notice.id)
   if (target) target.status = 'read'
-  if (notice.link) activeView.value = notice.link
+  if (notice.link && canAccessView(notice.link)) activeView.value = notice.link
+}
+
+function sendNotification(payload) {
+  const targetLabel = payload.type === 'course' ? '课程通知' : '班级通知'
+  notifications.value.unshift({
+    id: `notice-${Date.now()}`,
+    type: targetLabel,
+    title: payload.title,
+    content: payload.content,
+    time: '刚刚',
+    status: 'unread',
+    link: payload.type === 'course' ? 'schedule' : 'notifications',
+    classId: payload.classId,
+    courseId: payload.courseId,
+    ownerId: backendUserId(currentUser.value),
+    audienceRoles: ['student']
+  })
+  platformError.value = '通知已发送。'
 }
 
 async function addClass(payload) {
   try {
+    const masterId = payload.masterId || payload.teacherNo || payload.headTeacherNo || teachers.value[0]?.teacherNo || ''
     await createClass({
       ...payload,
       classId: payload.classId || payload.id || payload.name,
-      teacherNo: currentUser.value?.teacherNo || payload.teacherNo || payload.masterId,
-      masterId: currentUser.value?.teacherNo || payload.masterId || payload.teacherNo
+      teacherNo: masterId,
+      masterId
     })
     await refreshPlatformData()
     platformError.value = ''
   } catch (error) {
-    platformError.value = '创建班级失败，请确认班级编号未重复且后端服务可用。'
+    platformError.value = '创建班级失败，请确认班级编号未重复、班主任教师编号存在且后端服务可用。'
   }
 }
 
@@ -334,6 +430,40 @@ async function addCourse(payload) {
   }
 }
 
+async function importStudents(rows) {
+  studentImportResult.value = null
+  const result = {
+    success: 0,
+    failed: 0,
+    messages: []
+  }
+
+  for (const row of rows) {
+    try {
+      await registerStudentAccount(row)
+      result.success += 1
+      result.messages.push(`${row.studentNo} ${row.name} 导入成功`)
+    } catch (error) {
+      result.failed += 1
+      const detail = error?.response?.data?.detail || '导入失败'
+      result.messages.push(`${row.studentNo || '未知学号'} ${row.name || ''}：${detail}`)
+    }
+  }
+
+  studentImportResult.value = result
+  await refreshPlatformData().catch(() => null)
+}
+
+async function saveGrade(payload) {
+  try {
+    await saveGradeRecord(payload)
+    await refreshGrades()
+    platformError.value = ''
+  } catch (error) {
+    platformError.value = '保存成绩失败，请确认课程、学生和学期信息正确。'
+  }
+}
+
 async function refreshPlatformData() {
   const snapshot = await loadPlatformSnapshot()
   applyPlatformSnapshot(snapshot)
@@ -351,6 +481,35 @@ function applyPlatformSnapshot(snapshot) {
   rooms.value = snapshot.rooms || []
 }
 
+async function refreshTodos() {
+  if (!currentUser.value) return
+  todoLoading.value = true
+  try {
+    todos.value = await loadTodosForUser(currentUser.value)
+  } catch (error) {
+    platformError.value = '待办数据暂时不可用，当前保留本地显示。'
+  } finally {
+    todoLoading.value = false
+  }
+}
+
+async function refreshGrades() {
+  if (!currentUser.value) return
+  gradeLoading.value = true
+  try {
+    const result = await loadGradesForUser(currentUser.value, {
+      courses: courses.value,
+      students: students.value
+    })
+    grades.value = result.grades
+    gradeSummary.value = result.summary
+  } catch (error) {
+    platformError.value = '成绩数据暂时不可用，当前保留本地显示。'
+  } finally {
+    gradeLoading.value = false
+  }
+}
+
 function hydrateUser(user, snapshot) {
   if (user.role === 'admin') {
     return {
@@ -363,15 +522,24 @@ function hydrateUser(user, snapshot) {
     const teacher = user.authRole === 'admin'
       ? null
       : snapshot.teachers.find(item => item.teacherNo === user.teacherNo || item.username === user.username) || snapshot.teachers[0]
-    const classIds = snapshot.classes.map(item => item.id)
+    const teacherNo = teacher?.teacherNo || user.teacherNo || user.username || ''
+    const teacherName = teacher?.name || user.name
+    const classIds = snapshot.classes
+      .filter(item =>
+        item.masterId === teacherNo ||
+        item.headTeacherNo === teacherNo ||
+        item.teacherNo === teacherNo ||
+        item.headTeacher === teacherName
+      )
+      .map(item => item.id)
 
     return {
       ...user,
       id: teacher?.id || user.id,
       username: teacher?.username || user.username,
       name: teacher?.name || user.name,
-      teacherNo: teacher?.teacherNo || user.teacherNo || '',
-      classIds: classIds.length ? classIds : user.classIds || []
+      teacherNo,
+      classIds
     }
   }
 
@@ -419,7 +587,11 @@ async function refreshFiles() {
     const merged = [...cloneData(initialFiles)]
     for (const file of agentFiles) {
       if (!merged.some(item => item.name === file.name)) {
-        merged.unshift(file)
+        merged.unshift({
+          ...file,
+          ownerId: backendUserId(currentUser.value),
+          audienceRoles: [currentUser.value?.role].filter(Boolean)
+        })
       }
     }
     files.value = merged
@@ -440,6 +612,7 @@ async function restoreLoginSession() {
     applyPlatformSnapshot(snapshot)
     currentUser.value = hydrateUser(savedUser, snapshot)
     saveLoginSession(currentUser.value)
+    await Promise.allSettled([refreshTodos(), refreshGrades()])
   } catch (error) {
     currentUser.value = savedUser
     platformError.value = '已恢复本地登录状态，平台数据使用本地缓存。'
@@ -464,5 +637,54 @@ function readLoginSession() {
 function saveLoginSession(user) {
   if (!user) return
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user))
+}
+
+function canAccessView(view) {
+  const role = currentUser.value?.role
+  const common = ['dashboard', 'profile', 'todos', 'notifications', 'files', 'assistant']
+  const roleViews = {
+    student: ['schedule', 'grades', 'library', 'forum'],
+    teacher: ['classes', 'schedule', 'forum'],
+    admin: ['classes', 'schedule', 'forum', 'admin']
+  }
+  return [...common, ...(roleViews[role] || [])].includes(view)
+}
+
+function canCurrentUserSeeItem(item = {}) {
+  const user = currentUser.value
+  if (!user) return false
+  const role = user.role
+  const userId = backendUserId(user)
+  const itemOwner = item.ownerId || item.userId || item.user_id || item.studentNo || item.teacherNo
+  if (itemOwner && String(itemOwner) === String(userId)) return true
+  if (role === 'student' && item.classId) return item.classId === user.classId
+  if (role === 'teacher' && item.classId && Array.isArray(user.classIds) && user.classIds.includes(item.classId)) return true
+  if (Array.isArray(item.audienceRoles) && item.audienceRoles.includes(role)) return true
+  if (item.role && item.role === role) return true
+  if (item.classId && Array.isArray(user.classIds) && user.classIds.includes(item.classId)) return true
+  if (item.audience === 'all') return true
+  return false
+}
+
+function backendUserId(user = {}) {
+  const account = user || {}
+  return account.studentNo || account.teacherNo || account.username || account.id || ''
+}
+
+function toBackendDate(value) {
+  const text = String(value || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  const today = new Date()
+  if (text.includes('明天')) {
+    today.setDate(today.getDate() + 1)
+  }
+  return formatLocalDate(today)
+}
+
+function formatLocalDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 </script>

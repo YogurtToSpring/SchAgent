@@ -759,6 +759,18 @@ select:focus {
   margin: 5px 0 0;
 }
 
+.task-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.task-actions .ghost-action.compact {
+  min-width: 68px;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
 .priority.high {
   background: #ffecec;
   color: #b42318;
@@ -962,7 +974,7 @@ select:focus {
 }
 
 .inline-form {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   margin-bottom: 14px;
 }
 
@@ -972,6 +984,230 @@ select:focus {
 
 .course-form button {
   grid-column: span 1;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.section-actions select {
+  min-width: 152px;
+}
+
+.admin-overview-list,
+.admin-grade-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.admin-overview-list article,
+.admin-grade-summary article {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d7dee4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.admin-overview-list span,
+.admin-grade-summary span {
+  color: #667781;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-overview-list strong,
+.admin-grade-summary strong {
+  color: #172026;
+  font-size: 22px;
+}
+
+.admin-module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.admin-module-card {
+  display: grid;
+  gap: 10px;
+  min-height: 156px;
+  border: 1px solid #d7dee4;
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.admin-module-card:hover {
+  border-color: #8ec6b8;
+  background: #f6fbf9;
+}
+
+.admin-module-card span {
+  color: #667781;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-module-card strong {
+  color: #172026;
+  font-size: 20px;
+}
+
+.admin-module-card p {
+  margin: 0;
+  color: #667781;
+  line-height: 1.65;
+}
+
+.admin-subpage .section-heading > div {
+  display: grid;
+  gap: 8px;
+}
+
+.structured-form,
+.student-import-form,
+.course-import-form,
+.grade-entry-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.structured-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.structured-form .search-field {
+  position: relative;
+}
+
+.structured-form button[type='submit'] {
+  align-self: end;
+}
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.grade-search-bar {
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.inline-search,
+.search-field {
+  position: relative;
+}
+
+.search-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #cdd7de;
+  border-radius: 8px;
+  padding: 6px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(22, 32, 38, 0.12);
+}
+
+.search-suggestions button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 9px;
+  background: transparent;
+  color: #21313b;
+  font-weight: 700;
+  text-align: left;
+}
+
+.search-suggestions button:hover {
+  background: #eef8f5;
+  color: #0b6b57;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  color: #667781;
+  font-size: 13px;
+}
+
+.pagination-bar div {
+  display: flex;
+  gap: 8px;
+}
+
+.student-import-form {
+  grid-template-columns: minmax(160px, 1fr) minmax(140px, 180px) auto;
+}
+
+.course-import-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.grade-entry-form {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.structured-form label,
+.student-import-form label,
+.course-import-form label,
+.grade-entry-form label {
+  display: grid;
+  gap: 6px;
+  color: #667781;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.student-import-form textarea {
+  grid-column: 1 / -2;
+  min-height: 112px;
+  resize: vertical;
+}
+
+.student-import-form button {
+  align-self: end;
+}
+
+.course-import-form button,
+.grade-entry-form button {
+  align-self: end;
+}
+
+.import-result {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d7dee4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+  color: #52616b;
+  font-size: 13px;
+}
+
+.import-result strong {
+  color: #1c2e37;
 }
 
 .data-table-wrap {
@@ -2001,8 +2237,16 @@ pre {
   .quick-create,
   .reservation-controls,
   .post-form,
-  .settings-form {
+  .settings-form,
+  .structured-form,
+  .student-import-form,
+  .course-import-form,
+  .grade-entry-form {
     grid-template-columns: 1fr;
+  }
+
+  .student-import-form textarea {
+    grid-column: auto;
   }
 
   .assistant-page {
@@ -2032,10 +2276,50 @@ pre {
   .schedule-summary,
   .inline-form,
   .course-form,
+  .structured-form,
+  .student-import-form,
+  .course-import-form,
+  .grade-entry-form,
   .workbench-actions,
   .admin-actions,
   .grade-bars div {
     grid-template-columns: 1fr;
+  }
+
+  .section-heading,
+  .section-actions,
+  .task-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-actions {
+    width: 100%;
+  }
+
+  .section-actions select,
+  .section-actions button {
+    width: 100%;
+  }
+
+  .student-import-form textarea {
+    grid-column: auto;
+  }
+
+  .task-item {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .task-actions {
+    grid-column: 1 / -1;
+    grid-template-columns: auto auto;
+    justify-content: end;
+  }
+
+  .pagination-bar,
+  .pagination-bar div {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .platform-shell {

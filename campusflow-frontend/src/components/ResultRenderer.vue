@@ -164,7 +164,7 @@ function mergeArtifacts(current = [], next = []) {
 }
 
 function buildFileDownloadUrl(fileName) {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
+  const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
   return `${apiBaseUrl}/api/files/${encodeURIComponent(fileName)}`
 }
 </script>
