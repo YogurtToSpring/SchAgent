@@ -1104,6 +1104,93 @@ select:focus {
   grid-template-columns: minmax(220px, 1fr) auto;
 }
 
+.course-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.course-manage-card {
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+  border: 1px solid #d7dee4;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.course-manage-card:hover,
+.course-manage-card.active {
+  border-color: #6bb4a3;
+  background: #f7fbfa;
+  box-shadow: 0 12px 26px rgba(42, 55, 66, 0.09);
+}
+
+.course-manage-card.active {
+  box-shadow: inset 3px 0 0 #439a86, 0 12px 26px rgba(42, 55, 66, 0.09);
+}
+
+.course-card-head,
+.course-card-meta,
+.course-card-detail,
+.course-card-foot {
+  min-width: 0;
+}
+
+.course-card-head {
+  display: grid;
+  gap: 4px;
+}
+
+.course-card-head span,
+.course-card-foot span {
+  color: #667781;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.course-card-head strong {
+  overflow: hidden;
+  color: #172026;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-card-meta,
+.course-card-detail,
+.course-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.course-card-meta span,
+.course-card-detail span {
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #f0f4f6;
+  color: #40505c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.course-card-detail span {
+  background: #eef8f5;
+  color: #0b6b57;
+}
+
+.course-card-foot {
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #edf1f4;
+  padding-top: 10px;
+}
+
 .inline-search,
 .search-field {
   position: relative;
@@ -1139,6 +1226,22 @@ select:focus {
 .search-suggestions button:hover {
   background: #eef8f5;
   color: #0b6b57;
+}
+
+.detail-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  border-top: 1px solid #edf1f4;
+  padding-top: 16px;
+}
+
+.table-input {
+  width: 100%;
+  min-width: 86px;
+  min-height: 34px;
+  border-radius: 6px;
+  padding: 6px 8px;
 }
 
 .pagination-bar {

@@ -310,13 +310,20 @@
           </label>
           <label class="search-field">
             地点
-            <input v-model="newCourse.roomQuery" placeholder="搜索教室，如 3-3-301" />
-            <div v-if="roomSuggestions(newCourse.roomQuery).length" class="search-suggestions">
+            <input
+              v-model="newCourse.roomQuery"
+              placeholder="搜索教室，如 3-3-301"
+              @blur="scheduleCloseRoomSuggestions"
+              @focus="roomSuggestionsOpen = true"
+              @input="roomSuggestionsOpen = true"
+              @keydown.esc="roomSuggestionsOpen = false"
+            />
+            <div v-if="roomSuggestionsOpen && roomSuggestions(newCourse.roomQuery).length" class="search-suggestions">
               <button
                 v-for="room in roomSuggestions(newCourse.roomQuery)"
                 :key="room.roomFull"
                 type="button"
-                @click="newCourse.roomQuery = room.roomFull"
+                @mousedown.prevent="selectCourseRoom(room)"
               >
                 {{ room.label }}
               </button>
@@ -354,9 +361,22 @@
             :class="{ active: selectedCourseKey === course.id }"
             @click="selectedCourseKey = course.id"
           >
-            <span>{{ course.backendCourseId || course.courseId || course.id }}</span>
-            <strong>{{ course.courseName }}</strong>
-            <p>{{ className(course.classId) }} · {{ course.teacher }} · {{ course.semester || '未设置学期' }}</p>
+            <div class="course-card-head">
+              <span>{{ course.backendCourseId || course.courseId || course.id }}</span>
+              <strong>{{ course.courseName }}</strong>
+            </div>
+            <div class="course-card-meta">
+              <span>{{ className(course.classId) }}</span>
+              <span>{{ course.teacher || '待定教师' }}</span>
+            </div>
+            <div class="course-card-detail">
+              <span>{{ course.weekday || '未排课' }} {{ course.startTime || '--:--' }}-{{ course.endTime || '--:--' }}</span>
+              <span>{{ course.location || course.roomId || '未设置地点' }}</span>
+            </div>
+            <div class="course-card-foot">
+              <span>{{ course.semester || '未设置学期' }}</span>
+              <span>{{ courseStudents(course).length }} 名学生</span>
+            </div>
           </article>
         </div>
 
@@ -480,6 +500,7 @@ const selectedClassId = ref('')
 const selectedCourseKey = ref('')
 const pendingStudents = ref([])
 const noticeTarget = ref(null)
+const roomSuggestionsOpen = ref(false)
 const classQueries = reactive({})
 const storedGradeDrafts = reactive(loadStoredGradeDrafts())
 const gradeEdits = reactive({})
@@ -761,7 +782,8 @@ function confirmSaveCourseGrade(course, student) {
   emit('save-grade', {
     courseId: course.backendCourseId || course.courseId || course.id,
     studentNo: student.studentNo,
-    score: Number(edit.final || 0),
+    regularScore: Number(edit.usual || 0),
+    finalExamScore: Number(edit.final || 0),
     semester: course.semester || '2025-2026-2',
     examType: '期末考试',
     remark: edit.remark || ''
@@ -808,8 +830,8 @@ function gradeEdit(course, student) {
     const grade = findGrade(course, student)
     const stored = storedGradeDrafts[key] || {}
     gradeEdits[key] = {
-      usual: stored.usual ?? grade?.usual ?? grade?.usualScore ?? '',
-      final: grade?.final ?? grade?.finalScore ?? grade?.score ?? stored.final ?? '',
+      usual: grade?.regularScore ?? grade?.usual ?? grade?.usualScore ?? stored.usual ?? grade?.score ?? '',
+      final: grade?.finalExamScore ?? grade?.final ?? stored.final ?? grade?.score ?? '',
       remark: grade?.remark ?? stored.remark ?? ''
     }
   }
@@ -819,7 +841,7 @@ function gradeEdit(course, student) {
 function gradePointPreview(course, student) {
   const edit = gradeEdit(course, student)
   if (edit.final !== '' && edit.final != null) {
-    return scoreToGradePoint(Number(edit.final || 0)).toFixed(2)
+    return scoreToGradePoint(weightedScore(edit.usual, edit.final)).toFixed(2)
   }
   const grade = findGrade(course, student)
   if (grade?.gradePoint != null) return Number(grade.gradePoint).toFixed(2)
@@ -918,6 +940,17 @@ function roomSuggestions(query) {
     .slice(0, 5)
 }
 
+function selectCourseRoom(room) {
+  newCourse.roomQuery = room.roomFull
+  roomSuggestionsOpen.value = false
+}
+
+function scheduleCloseRoomSuggestions() {
+  window.setTimeout(() => {
+    roomSuggestionsOpen.value = false
+  }, 120)
+}
+
 function resolveTeacherNo(value) {
   const text = String(value || '').trim()
   const matched = props.teachers.find(teacher => teacher.teacherNo === text || formatTeacher(teacher) === text || teacher.name === text)
@@ -963,6 +996,14 @@ function scoreToGradePoint(score) {
   if (score >= 64) return 1.5
   if (score >= 60) return 1.0
   return 0
+}
+
+function weightedScore(regularScore, finalExamScore) {
+  if (regularScore === '' || regularScore == null) return Number(finalExamScore || 0)
+  if (finalExamScore === '' || finalExamScore == null) return Number(regularScore || 0)
+  const regular = Number(regularScore || 0)
+  const final = Number(finalExamScore || 0)
+  return Math.round((regular * 0.4 + final * 0.6) * 10) / 10
 }
 
 function nextCourseId() {

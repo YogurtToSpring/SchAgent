@@ -320,7 +320,7 @@ export async function saveGradeRecord(grade) {
     return data
   } catch (error) {
     const detail = String(error?.response?.data?.detail || '')
-    if (error?.response?.status === 400 && detail.includes('already exist')) {
+    if (error?.response?.status === 400 && (detail.includes('already exist') || detail.includes('Duplicate'))) {
       const { data } = await platformClient.patch('/api/grade/modify', payload)
       await refreshGpaCache().catch(() => null)
       return data
@@ -557,23 +557,26 @@ function normalizeTodo(row = {}) {
 }
 
 function normalizeStudentGrades(rows, payload = {}) {
-  return rows.map(row => ({
-    id: row.id || `${row.course_id}-${payload.stu_num}-${row.semester}`,
-    backendId: row.id,
-    studentNo: payload.stu_num,
-    studentName: payload.name,
-    classId: payload.cls,
-    courseId: String(row.course_id || ''),
-    courseName: row.course_name || String(row.course_id || ''),
-    credit: Number(row.credit || 0),
-    score: Number(row.score || 0),
-    gradePoint: Number(row.grade_point || 0),
-    gradeLetter: row.grade_letter || '',
-    semester: row.semester || '',
-    examType: row.exam_type || '',
-    remark: row.remark || '',
-    raw: row
-  }))
+  return rows.map(row => {
+    const scores = normalizeGradeScores(row)
+    return {
+      id: row.id || `${row.course_id}-${payload.stu_num}-${row.semester}`,
+      backendId: row.id,
+      studentNo: payload.stu_num,
+      studentName: payload.name,
+      classId: payload.cls,
+      courseId: String(row.course_id || ''),
+      courseName: row.course_name || String(row.course_id || ''),
+      credit: Number(row.credit || 0),
+      ...scores,
+      gradePoint: Number(row.grade_point || 0),
+      gradeLetter: row.grade_letter || '',
+      semester: row.semester || '',
+      examType: row.exam_type || '',
+      remark: row.remark || '',
+      raw: row
+    }
+  })
 }
 
 function normalizeTeacherGrades(courses, context = {}) {
@@ -598,6 +601,7 @@ function normalizeGradeRow(row, context = {}) {
   const studentNo = String(row.stu_num || row.studentNo || '')
   const course = (context.courses || []).find(item => item.backendCourseId === courseId || item.courseId === courseId)
   const student = (context.students || []).find(item => item.studentNo === studentNo)
+  const scores = normalizeGradeScores(row)
 
   return {
     id: row.id || `${courseId}-${studentNo}-${row.semester || ''}`,
@@ -608,7 +612,7 @@ function normalizeGradeRow(row, context = {}) {
     courseId,
     courseName: row.course_name || course?.courseName || courseId,
     credit: Number(row.credit ?? course?.credit ?? 0),
-    score: Number(row.score || 0),
+    ...scores,
     gradePoint: Number(row.grade_point || 0),
     gradeLetter: row.grade_letter || '',
     semester: row.semester || course?.semester || '',
@@ -629,14 +633,61 @@ function normalizeGpaSummary(data = {}) {
 }
 
 function toBackendGrade(grade) {
+  const fallbackScore = readNumber(grade.score ?? grade.final_score ?? grade.finalScore, 0)
+  const regularScore = readNumber(
+    grade.regularScore ?? grade.regular_score ?? grade.usual ?? grade.usualScore,
+    fallbackScore
+  )
+  const finalExamScore = readNumber(
+    grade.finalExamScore ?? grade.final_exam_score ?? grade.final ?? grade.finalExam,
+    fallbackScore
+  )
+
   return {
     course_id: String(grade.courseId || grade.course_id || ''),
     stu_num: String(grade.studentNo || grade.stu_num || ''),
-    score: Number(grade.score || 0),
+    regular_score: regularScore,
+    final_exam_score: finalExamScore,
     semester: grade.semester || '2025-2026-2',
     exam_type: grade.examType || grade.exam_type || '期末考试',
     remark: grade.remark || ''
   }
+}
+
+function normalizeGradeScores(row = {}) {
+  const regularScore = readOptionalNumber(row.regular_score ?? row.regularScore ?? row.usual ?? row.usualScore)
+  const finalExamScore = readOptionalNumber(row.final_exam_score ?? row.finalExamScore ?? row.final ?? row.finalExam)
+  const score = readNumber(
+    row.score ?? row.total_score ?? row.totalScore ?? row.final_score ?? row.finalScore,
+    calculateWeightedScore(regularScore, finalExamScore)
+  )
+
+  return {
+    regularScore,
+    finalExamScore,
+    score,
+    usual: regularScore,
+    final: finalExamScore,
+    finalScore: score
+  }
+}
+
+function calculateWeightedScore(regularScore, finalExamScore) {
+  if (regularScore == null && finalExamScore == null) return 0
+  if (regularScore == null) return Number(finalExamScore || 0)
+  if (finalExamScore == null) return Number(regularScore || 0)
+  return Math.round((Number(regularScore) * 0.4 + Number(finalExamScore) * 0.6) * 10) / 10
+}
+
+function readOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function readNumber(value, fallback = 0) {
+  const number = readOptionalNumber(value)
+  return number == null ? fallback : number
 }
 
 function getBackendUserId(user = {}) {
