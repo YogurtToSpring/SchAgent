@@ -1703,7 +1703,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
                 yield {"event": "tool_result", "data": {"name": tool_name, "result": result_text, "success": True}}
 
                 # ★ 检测文件生成工具，产出 file_ready 事件供前端渲染下载卡片
-                if tool_name in ("write_file", "markdown_to_pdf", "use_python_pptx"):
+                if tool_name in ("write_file", "markdown_to_pdf"):
                     file_info = _extract_file_info(tool_name, raw_output)
                     if file_info:
                         yield {"event": "file_ready", "data": file_info}
@@ -1787,7 +1787,6 @@ def _extract_file_info(tool_name: str, output: str) -> Optional[dict]:
     支持的输出格式：
         write_file      → "已将内容写入文件：notes.txt"
         markdown_to_pdf → "已将 Markdown 转换为 PDF: C:\\...\\workspace\\output.pdf"
-        use_python_pptx → 扫描用户工作区中最新的 .pptx 文件
 
     Returns:
         {"name", "path", "size", "size_formatted", "modified_at"} 或 None
@@ -1807,17 +1806,6 @@ def _extract_file_info(tool_name: str, output: str) -> Optional[dict]:
                 file_path = _resolve_user_path(file_name)
             except ValueError:
                 return None
-
-    elif tool_name == "use_python_pptx":
-        # 扫描用户工作区中最新的 .pptx 文件（PPTX 工具无法从输出中得知文件名）
-        user_ws = _get_user_workspace()
-        pptx_files = sorted(
-            user_ws.glob("*.pptx"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if pptx_files:
-            file_path = pptx_files[0]
 
     if file_path and file_path.exists() and file_path.is_file():
         # 安全检查：确保在工作区范围内
