@@ -20,15 +20,17 @@
           :class="{ active: session.localId === activeLocalSessionId }"
           @click="switchSession(session.localId)"
         >
-          <input
-            class="session-title-input"
-            :value="session.title"
-            :disabled="loading && session.localId !== activeLocalSessionId"
-            @click.stop
-            @focus="switchSession(session.localId)"
-            @input="renameSession(session.localId, $event.target.value)"
-            @keydown.enter.prevent="$event.target.blur()"
-          />
+          <label class="session-title-field" @click.stop>
+            <span>会话名称</span>
+            <input
+              class="session-title-input"
+              :value="session.title"
+              :disabled="loading && session.localId !== activeLocalSessionId"
+              @focus="switchSession(session.localId)"
+              @input="renameSession(session.localId, $event.target.value)"
+              @keydown.enter.prevent="$event.target.blur()"
+            />
+          </label>
           <small>{{ sessionMeta(session) }}</small>
         </article>
       </div>
@@ -42,12 +44,15 @@
       <header class="assistant-conversation-header">
         <div class="conversation-title-group">
           <span class="assistant-eyebrow">CampusFlow Assistant</span>
-          <input
-            class="conversation-title-input"
-            :value="currentSessionTitle"
-            @input="renameSession(activeLocalSessionId, $event.target.value)"
-            @keydown.enter.prevent="$event.target.blur()"
-          />
+          <label class="conversation-title-field">
+            <span>会话名称</span>
+            <input
+              class="conversation-title-input"
+              :value="currentSessionTitle"
+              @input="renameSession(activeLocalSessionId, $event.target.value)"
+              @keydown.enter.prevent="$event.target.blur()"
+            />
+          </label>
           <p>{{ currentConversationSubtitle }}</p>
         </div>
 

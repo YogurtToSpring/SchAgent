@@ -24,10 +24,10 @@
       </div>
 
       <div class="filter-bar">
-        <input v-model="filters.keyword" />
-        <input v-model="filters.classKeyword" />
-        <input v-model="filters.semester" />
-        <input v-model="filters.weekday" />
+        <label class="filter-field"><span>课程搜索</span><input v-model="filters.keyword" /></label>
+        <label class="filter-field"><span>班级</span><input v-model="filters.classKeyword" /></label>
+        <label class="filter-field"><span>学期</span><input v-model="filters.semester" /></label>
+        <label class="filter-field"><span>星期</span><input v-model="filters.weekday" /></label>
       </div>
 
       <div class="data-table-wrap">

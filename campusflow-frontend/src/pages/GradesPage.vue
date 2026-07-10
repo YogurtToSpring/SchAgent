@@ -12,7 +12,7 @@
       </div>
 
       <form class="filter-bar grade-search-bar" @submit.prevent="searchStudentGrades">
-        <input v-model="adminSearch" />
+        <label class="filter-field"><span>学生学号</span><input v-model="adminSearch" /></label>
         <button class="primary-action compact" type="submit">查询</button>
       </form>
 
@@ -150,7 +150,7 @@
           <p>{{ pageSubtitle }}</p>
         </div>
         <div class="section-actions">
-          <input v-model="selectedSemester" />
+          <label class="compact-filter-field"><span>学期</span><input v-model="selectedSemester" /></label>
           <button class="ghost-action" type="button" :disabled="loading" @click="$emit('refresh-grades')">
             {{ loading ? '同步中' : '同步成绩' }}
           </button>

@@ -44,18 +44,21 @@
           </button>
         </div>
         <div class="course-selection-filters">
-          <label class="search-input-field">
-            <Search :size="16" />
-            <input v-model="filters.keyword" />
+          <label class="compact-filter-field">
+            <span>课程搜索</span>
+            <span class="search-input-field">
+              <Search :size="16" />
+              <input v-model="filters.keyword" />
+            </span>
           </label>
-          <select v-model="filters.semester" aria-label="按学期筛选">
-            <option value="">全部学期</option>
-            <option v-for="semester in semesters" :key="semester" :value="semester">{{ semester }}</option>
-          </select>
-          <select v-model="filters.weekday" aria-label="按星期筛选">
-            <option value="">全部星期</option>
-            <option v-for="weekday in weekdays" :key="weekday" :value="weekday">{{ weekday }}</option>
-          </select>
+          <label class="compact-filter-field"><span>学期</span><select v-model="filters.semester" aria-label="按学期筛选">
+              <option value="">全部学期</option>
+              <option v-for="semester in semesters" :key="semester" :value="semester">{{ semester }}</option>
+            </select></label>
+          <label class="compact-filter-field"><span>星期</span><select v-model="filters.weekday" aria-label="按星期筛选">
+              <option value="">全部星期</option>
+              <option v-for="weekday in weekdays" :key="weekday" :value="weekday">{{ weekday }}</option>
+            </select></label>
         </div>
       </div>
 

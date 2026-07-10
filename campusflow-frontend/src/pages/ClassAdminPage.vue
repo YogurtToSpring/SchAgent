@@ -62,9 +62,9 @@
         </form>
 
         <div class="filter-bar">
-          <input v-model="classFilters.keyword" />
-          <input v-model="classFilters.grade" />
-          <input v-model="classFilters.major" />
+          <label class="filter-field"><span>班级搜索</span><input v-model="classFilters.keyword" /></label>
+          <label class="filter-field"><span>年级</span><input v-model="classFilters.grade" /></label>
+          <label class="filter-field"><span>专业</span><input v-model="classFilters.major" /></label>
         </div>
 
         <div class="data-table-wrap">
@@ -140,8 +140,8 @@
 
       <template v-else-if="activeModule === 'students' && isAdmin">
         <div class="filter-bar">
-          <input v-model="studentFilters.keyword" />
-          <input v-model="studentFilters.targetClass" />
+          <label class="filter-field"><span>学生搜索</span><input v-model="studentFilters.keyword" /></label>
+          <label class="filter-field"><span>目标班级</span><input v-model="studentFilters.targetClass" /></label>
         </div>
 
         <div class="data-table-wrap">
@@ -347,8 +347,8 @@
         </form>
 
         <div class="filter-bar">
-          <input v-model="courseFilters.keyword" />
-          <input v-model="courseFilters.semester" />
+          <label class="filter-field"><span>课程搜索</span><input v-model="courseFilters.keyword" /></label>
+          <label class="filter-field"><span>学期</span><input v-model="courseFilters.semester" /></label>
         </div>
 
         <div class="course-card-list">

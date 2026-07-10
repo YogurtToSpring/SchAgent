@@ -592,6 +592,23 @@ select:focus {
   gap: 10px;
 }
 
+.quick-create-field,
+.form-field,
+.filter-field,
+.compact-filter-field {
+  display: grid;
+  gap: 6px;
+  color: #667781;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quick-create > button,
+.post-form > button,
+.grade-search-bar > button {
+  align-self: end;
+}
+
 .profile-card {
   display: grid;
   align-content: start;
@@ -875,6 +892,10 @@ select:focus {
   resize: vertical;
 }
 
+.post-content-field {
+  min-width: 0;
+}
+
 .post-card {
   display: flex;
   justify-content: space-between;
@@ -1100,6 +1121,10 @@ select:focus {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.filter-field {
+  min-width: 0;
 }
 
 .grade-search-bar {
@@ -1448,6 +1473,20 @@ select:focus {
   color: #172026;
   outline: none;
   font-weight: 800;
+}
+
+.session-title-field,
+.conversation-title-field {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.session-title-field > span,
+.conversation-title-field > span {
+  color: #72818b;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .session-title-input {
@@ -2361,6 +2400,19 @@ th {
   background: #fff;
 }
 
+.chat-input-field {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  color: #667781;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chat-input-field textarea {
+  width: 100%;
+}
+
 .library-summary > div,
 .course-selection-summary > div {
   display: grid;
@@ -2654,6 +2706,7 @@ th {
 
 .course-selection-filters {
   display: flex;
+  align-items: flex-end;
   justify-content: flex-end;
   gap: 8px;
 }
