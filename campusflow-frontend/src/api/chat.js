@@ -182,17 +182,6 @@ function applyStreamEvent(eventName, data, result, handlers) {
     call.status = data.success === false ? "failed" : "success";
     call.output = data.result || "";
     handlers.onToolResult?.(call, data);
-    const inferredArtifacts = inferFileArtifactsFromText(data.result || "");
-    if (inferredArtifacts.length) {
-      result.artifacts = mergeArtifacts(result.artifacts, inferredArtifacts);
-      result.files = mergeFiles(
-        result.files,
-        inferredArtifacts.map(artifactToFile),
-      );
-      for (const artifact of inferredArtifacts) {
-        handlers.onFileReady?.(artifact, data);
-      }
-    }
     return;
   }
 
@@ -325,6 +314,7 @@ function findFileNameStart(source, extensionIndex) {
     "[",
     "《",
     "/",
+    "*",
   ]);
   let index = extensionIndex - 1;
   while (index >= 0 && !separators.has(source[index])) {
@@ -335,6 +325,7 @@ function findFileNameStart(source, extensionIndex) {
 
 function cleanFileName(name = "") {
   const cleaned = String(name)
+    .replace(/^\*+/, "")
     .replace(/^[/\\]+/, "")
     .replace(/[，。；、：:）)】\]》>]+$/g, "")
     .trim();

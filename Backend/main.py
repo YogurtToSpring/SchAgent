@@ -292,8 +292,24 @@ async def chat_stream_endpoint(request: ChatRequest):
                     yield f"event: error\ndata: {{\"message\": \"Agent API 返回 {resp.status_code}: {error_text.decode()}\"}}\n\n"
                     yield f"event: done\ndata: {{\"session_id\": \"{sid}\", \"error\": \"upstream_error\"}}\n\n"
                     return
+                current_event = ""
                 async for line in resp.aiter_lines():
-                    if line:
+                    if not line:
+                        current_event = ""
+                        yield "\n"
+                        continue
+                    if line.startswith("event: "):
+                        current_event = line[7:].strip()
+                        yield line + "\n"
+                    elif line.startswith("data: ") and current_event == "file_ready" and user_id:
+                        data_str = line[6:].strip()
+                        try:
+                            data = json.loads(data_str)
+                            data["user_id"] = user_id
+                            yield "data: " + json.dumps(data, ensure_ascii=False) + "\n"
+                        except json.JSONDecodeError:
+                            yield line + "\n"
+                    else:
                         yield line + "\n"
         except httpx.ConnectError:
             yield f"event: error\ndata: {{\"message\": \"无法连接到 Agent 服务\"}}\n\n"

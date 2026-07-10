@@ -75,7 +75,7 @@ const safeHtml = computed(() => {
 })
 
 const renderedArtifacts = computed(() => {
-  return mergeArtifacts(props.artifacts, inferFileArtifactsFromText(props.content))
+  return props.artifacts || []
 })
 
 function normalizeMarkdownText(text) {
@@ -131,7 +131,7 @@ function extractFileNames(text = '') {
 function findFileNameStart(source, extensionIndex) {
   const separators = new Set([
     ' ', '\n', '\t', '\r', '"', "'", '`', '<', '>', '，', '。', '；', '、',
-    '：', ':', '（', '(', '【', '[', '《', '/'
+    '：', ':', '（', '(', '【', '[', '《', '/', '*'
   ])
   let index = extensionIndex - 1
   while (index >= 0 && !separators.has(source[index])) {
@@ -142,6 +142,7 @@ function findFileNameStart(source, extensionIndex) {
 
 function cleanFileName(name = '') {
   const cleaned = String(name)
+    .replace(/^\*+/, '')
     .replace(/^[/\\]+/, '')
     .replace(/[，。；、：:）)】\]》>]+$/g, '')
     .trim()

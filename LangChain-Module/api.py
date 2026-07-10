@@ -20,6 +20,7 @@ SchAgent FastAPI 接口层
 """
 
 import json
+import mimetypes
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
@@ -244,7 +245,7 @@ async def download_file(file_name: str, user_id: Optional[str] = Query(None, des
     return FileResponse(
         path=str(file_path),
         filename=file_name,
-        media_type="application/octet-stream",
+        media_type=mimetypes.guess_type(file_name)[0] or "application/octet-stream",
     )
 
 
