@@ -583,7 +583,8 @@ async function refreshWeather() {
 
 async function refreshFiles() {
   try {
-    const agentFiles = await listAgentFiles()
+    const uid = backendUserId(currentUser.value)
+    const agentFiles = await listAgentFiles(uid)
     const merged = [...cloneData(initialFiles)]
     for (const file of agentFiles) {
       if (!merged.some(item => item.name === file.name)) {

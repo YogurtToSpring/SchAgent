@@ -167,7 +167,7 @@ async def call_agent_stream_collect(session_id: str, message: str, username: Opt
                         data = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
-                    handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls, collected_files)
+                    handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls, collected_files, user_id)
                     if event_type == "error":
                         error_message = data.get("message", "未知错误")
                     elif event_type == "done":
@@ -177,7 +177,7 @@ async def call_agent_stream_collect(session_id: str, message: str, username: Opt
     except Exception as e:
         return ChatResponse(session_id=session_id, status="failed", answer=f"调用 Agent 出错: {str(e)}")
 
-    full_answer = "".join(collected_tokens).strip()
+    full_answer = "".join(collected_tokens)
     if not full_answer and error_message:
         full_answer = f"处理出错: {error_message}"
         status = "failed"
@@ -192,7 +192,7 @@ async def call_agent_stream_collect(session_id: str, message: str, username: Opt
         collected_steps = ["正在理解任务...", "正在生成回答..."]
     return ChatResponse(session_id=final_session_id, status=status, answer=full_answer, steps=collected_steps, tool_calls=collected_tool_calls, files=collected_files)
 
-def handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls, collected_files):
+def handle_sse_event(event_type, data, collected_steps, collected_tokens, collected_tool_calls, collected_files, user_id=None):
     """处理单个 SSE 事件"""
     if event_type == "status":
         phase = data.get("phase", "")
@@ -216,13 +216,14 @@ def handle_sse_event(event_type, data, collected_steps, collected_tokens, collec
             clean_args = str(args)[:200]
         collected_tool_calls.append({"tool": name, "label": label, "status": "success", "input": clean_args, "output": None})
     elif event_type == "file_ready":
+        user_param = f"?user_id={user_id}" if user_id else ""
         collected_files.append({
             "name": data.get("name", ""),
             "path": data.get("path", ""),
             "size": data.get("size", 0),
             "size_formatted": data.get("size_formatted", ""),
             "modified_at": data.get("modified_at", ""),
-            "download_url": f"/api/files/{data.get("name", "")}",
+            "download_url": f"/api/files/{data.get("name", "")}{user_param}",
         })
     elif event_type == "tool_result":
         name = data.get("name", "")
@@ -347,9 +348,12 @@ async def write_memory(username: str, key: str, value: str):
         raise HTTPException(status_code=503, detail="无法连接到 Agent 服务")
 
 @app.get("/api/files")
-async def list_files():
+async def list_files(user_id: Optional[str] = Query(None, description="用户ID，透传给 Agent API")):
     try:
-        resp = await client.get(f"{AGENT_API_BASE}/files")
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+        resp = await client.get(f"{AGENT_API_BASE}/files", params=params)
         resp.raise_for_status()
         return resp.json()
     except httpx.ConnectError:
@@ -357,7 +361,7 @@ async def list_files():
 
 
 @app.get("/api/files/{file_name:path}")
-async def download_file(file_name: str):
+async def download_file(file_name: str, user_id: Optional[str] = Query(None, description="用户ID，透传给 Agent API")):
     """下载 Agent 生成的文件（如 PDF），从 C 代理"""
     normalized_name = file_name.replace("\\", "/").strip("/")
     if not normalized_name or ".." in normalized_name.split("/"):
@@ -366,9 +370,12 @@ async def download_file(file_name: str):
     encoded_name = quote(normalized_name, safe="")
     display_name = normalized_name.split("/")[-1]
     encoded_display_name = quote(display_name)
+    params = {}
+    if user_id:
+        params["user_id"] = user_id
     url = f"{AGENT_API_BASE}/files/{encoded_name}"
     try:
-        resp = await client.get(url)
+        resp = await client.get(url, params=params)
         resp.raise_for_status()
         return Response(
             content=resp.content,

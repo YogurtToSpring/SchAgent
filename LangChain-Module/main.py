@@ -14,6 +14,7 @@ SchAgent LangChain 核心模块
 """
 
 import os
+import contextvars
 import re
 import json
 import math
@@ -166,6 +167,35 @@ memory_store = UserMemoryStore(WORKSPACE_DIR / "user_data")
 
 
 # ============================================================
+# 用户工作区隔离（contextvars 跨异步边界传递当前用户上下文）
+# ============================================================
+
+_current_user_id: contextvars.ContextVar[str] = contextvars.ContextVar('current_user_id', default='')
+_current_username: contextvars.ContextVar[str] = contextvars.ContextVar('current_username', default='')
+
+
+def _get_user_workspace() -> Path:
+    """获取当前用户的工作区子目录，若无法确定用户则回退到全局 WORKSPACE_DIR。"""
+    uid = _current_user_id.get()
+    if uid:
+        user_dir = WORKSPACE_DIR / uid
+        user_dir.mkdir(parents=True, exist_ok=True)
+        return user_dir
+    return WORKSPACE_DIR
+
+
+def _resolve_user_path(file_name: str) -> Path:
+    """将文件名解析到当前用户的工作区子目录，自动创建目录，含路径遍历防护。"""
+    base = _get_user_workspace()
+    resolved = (base / file_name).resolve()
+    # 安全检查：确保解析后的路径仍然在 WORKSPACE_DIR 之下
+    if not str(resolved).startswith(str(WORKSPACE_DIR.resolve())):
+        raise ValueError(f"非法文件路径：{file_name}")
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
+# ============================================================
 # 工具定义
 # ============================================================
 
@@ -304,13 +334,15 @@ def get_current_time() -> str:
 def list_files() -> str:
     """列出工作区目录下的所有文件和文件夹。不需要任何参数。"""
     try:
-        # ★ 修复：os.listdir 只接受一个参数
-        items = os.listdir(WORKSPACE_DIR)
+        ws = _get_user_workspace()
+        if not ws.exists():
+            return "工作区目前没有文件。"
+        items = os.listdir(ws)
         if not items:
             return "工作区目前没有文件。"
         lines = []
         for item in sorted(items):
-            item_path = WORKSPACE_DIR / item
+            item_path = ws / item
             if item_path.is_dir():
                 lines.append(f" {item}/")
             else:
@@ -324,10 +356,10 @@ def list_files() -> str:
 @tool
 def read_file(file_name: str) -> str:
     """读取工作区中指定文件的内容。参数 file_name 为文件名称（如 'notes.txt'）。"""
-    # ★ 修复：防止路径遍历攻击
-    file_path = (WORKSPACE_DIR / file_name).resolve()
-    if not str(file_path).startswith(str(WORKSPACE_DIR.resolve())):
-        return "错误：不允许访问工作区以外的文件。"
+    try:
+        file_path = _resolve_user_path(file_name)
+    except ValueError as e:
+        return f"错误：{str(e)}"
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -343,10 +375,10 @@ def read_file(file_name: str) -> str:
 @tool
 def write_file(file_name: str, content: str) -> str:
     """将内容写入工作区的指定文件。参数 file_name 为文件名称，content 为要写入的内容。"""
-    # ★ 修复：防止路径遍历攻击
-    file_path = (WORKSPACE_DIR / file_name).resolve()
-    if not str(file_path).startswith(str(WORKSPACE_DIR.resolve())):
-        return "错误：不允许写入工作区以外的文件。"
+    try:
+        file_path = _resolve_user_path(file_name)
+    except ValueError as e:
+        return f"错误：{str(e)}"
     try:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -467,7 +499,7 @@ def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
 </html>"""
 
         # 将 HTML 转为 PDF
-        pdf_path = WORKSPACE_DIR / output_file
+        pdf_path = _get_user_workspace() / output_file
         pdfkit.from_string(full_html, str(pdf_path))
 
         return f"已将 Markdown 转换为 PDF: {pdf_path}"
@@ -566,7 +598,7 @@ def use_python_pptx(command: str) -> str:
         "Pt": Pt,
         "Emu": Emu,
         "pptx": pptx,
-        "WORKSPACE_DIR": WORKSPACE_DIR,
+        "WORKSPACE_DIR": _get_user_workspace(),
         "Path": Path,
     }
     safe_locals = {}
@@ -581,9 +613,10 @@ def use_python_pptx(command: str) -> str:
 
     result = None
     try:
-        # 切换到工作目录执行
+        # 切换到用户工作目录执行
         original_cwd = os.getcwd()
-        os.chdir(str(WORKSPACE_DIR))
+        user_ws = _get_user_workspace()
+        os.chdir(str(user_ws))
 
         try:
             exec(command, safe_globals, safe_locals)
@@ -1538,6 +1571,10 @@ def chat(session_id: str, message: str, username: Optional[str] = None, role: Op
     """
     message = _build_user_context_message(message, username, role, user_id, class_id, class_ids)
 
+    # ★ 设置当前用户上下文（供文件类工具透明隔离使用）
+    _current_user_id.set(user_id or '')
+    _current_username.set(username or '')
+
     result = agent.invoke(
         {"messages": [HumanMessage(content=message)]},
         config={
@@ -1575,6 +1612,10 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
     import traceback
 
     message = _build_user_context_message(message, username, role, user_id, class_id, class_ids)
+
+    # ★ 设置当前用户上下文（供文件类工具透明隔离使用）
+    _current_user_id.set(user_id or '')
+    _current_username.set(username or '')
 
     # ---- 内部状态机 ----
     phase: str = "reasoning"          # reasoning | calling_tool | responding | done
@@ -1756,7 +1797,11 @@ def _extract_file_info(tool_name: str, output: str) -> Optional[dict]:
     elif tool_name == "write_file":
         match = re.search(r'写入文件[：:]\s*(.+)$', output)
         if match:
-            file_path = (WORKSPACE_DIR / match.group(1).strip()).resolve()
+            file_name = match.group(1).strip()
+            try:
+                file_path = _resolve_user_path(file_name)
+            except ValueError:
+                return None
 
     if file_path and file_path.exists() and file_path.is_file():
         # 安全检查：确保在工作区范围内

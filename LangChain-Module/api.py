@@ -195,30 +195,45 @@ async def delete_memory(username: str, key: Optional[str] = Query(None)):
 # ============================================================
 
 @app.get("/files")
-async def list_workspace_files():
-    """列出工作区中所有可下载的文件"""
+async def list_workspace_files(user_id: Optional[str] = Query(None, description="用户ID，用于隔离工作区文件")):
+    """列出工作区中所有可下载的文件。若提供 user_id 则仅列出该用户的文件。"""
     items = []
     try:
-        for f in WORKSPACE_DIR.iterdir():
-            if f.is_file():
-                items.append({
-                    "name": f.name,
-                    "size": f.stat().st_size,
-                    "url": f"/files/{f.name}",
-                })
+        if user_id:
+            user_dir = WORKSPACE_DIR / user_id
+            if user_dir.exists() and user_dir.is_dir():
+                for f in user_dir.iterdir():
+                    if f.is_file():
+                        items.append({
+                            "name": f.name,
+                            "size": f.stat().st_size,
+                            "url": f"/files/{f.name}?user_id={user_id}",
+                        })
+        else:
+            # 向后兼容：无 user_id 时列出根目录文件
+            for f in WORKSPACE_DIR.iterdir():
+                if f.is_file():
+                    items.append({
+                        "name": f.name,
+                        "size": f.stat().st_size,
+                        "url": f"/files/{f.name}",
+                    })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"列出文件出错：{str(e)}")
     return {"files": items}
 
 
 @app.get("/files/{file_name}")
-async def download_file(file_name: str):
+async def download_file(file_name: str, user_id: Optional[str] = Query(None, description="用户ID，用于隔离工作区文件")):
     """下载工作区中 Agent 生成的文件（如 PDF）。
 
     由 markdown_to_pdf 等工具生成的文件存储在工作区目录，
-    通过此端点可以下载到前端。
+    通过此端点可以下载到前端。若提供 user_id 则从用户子目录读取。
     """
-    file_path = (WORKSPACE_DIR / file_name).resolve()
+    if user_id:
+        file_path = (WORKSPACE_DIR / user_id / file_name).resolve()
+    else:
+        file_path = (WORKSPACE_DIR / file_name).resolve()
     # 安全检查：防止路径遍历攻击
     if not str(file_path).startswith(str(WORKSPACE_DIR.resolve())):
         raise HTTPException(status_code=403, detail="禁止访问工作区以外的文件")

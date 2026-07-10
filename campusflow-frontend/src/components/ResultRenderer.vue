@@ -83,7 +83,6 @@ function normalizeMarkdownText(text) {
     .replace(/\r\n/g, '\n')
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, '  ')
-    .trim()
 }
 
 function fileMeta(file) {

@@ -2,9 +2,14 @@ import axios from 'axios'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
-export async function listAgentFiles() {
+export async function listAgentFiles(userId) {
+  const params = {}
+  if (userId) {
+    params.user_id = userId
+  }
   const { data } = await axios.get(`${apiBaseUrl}/api/files`, {
-    timeout: 12000
+    timeout: 12000,
+    params
   })
   const files = Array.isArray(data?.files) ? data.files : []
   return files.map(file => ({

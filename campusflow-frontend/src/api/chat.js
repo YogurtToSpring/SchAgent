@@ -461,8 +461,7 @@ function splitReasoning(text) {
 function normalizeMarkdownText(text) {
   return String(text || "")
     .replace(/\r\n/g, "\n")
-    .replace(/\\n/g, "\n")
-    .trim();
+    .replace(/\\n/g, "\n");
 }
 
 async function streamMockResponse(payload, handlers) {
