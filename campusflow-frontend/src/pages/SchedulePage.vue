@@ -120,7 +120,11 @@ const roleCourses = computed(() => {
   if (props.currentUser.role === 'teacher') {
     return props.courses.filter(course => isTeacherCourse(course))
   }
-  return props.courses.filter(course => course.classId === props.currentUser.classId)
+  const studentNo = props.currentUser.studentNo || props.currentUser.username
+  return props.courses.filter(course => {
+    if (Array.isArray(course.studentNos)) return course.studentNos.includes(studentNo)
+    return course.classId === props.currentUser.classId
+  })
 })
 
 const filteredCourses = computed(() => {

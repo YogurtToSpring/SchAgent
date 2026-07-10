@@ -888,6 +888,10 @@ function classStudents(classId) {
 }
 
 function courseStudents(course) {
+  if (Array.isArray(course.studentNos)) {
+    const enrolled = new Set(course.studentNos)
+    return props.students.filter(student => enrolled.has(student.studentNo))
+  }
   return classStudents(course.classId)
 }
 

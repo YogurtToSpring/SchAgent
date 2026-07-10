@@ -66,6 +66,7 @@ import {
   Files,
   GraduationCap,
   Home,
+  ListChecks,
   MessageSquareText,
   ShieldCheck,
   UserRound,
@@ -99,6 +100,7 @@ const navItems = computed(() => {
     return [
       ...commonItems.slice(0, 3),
       { key: 'schedule', label: '我的课表', icon: CalendarDays },
+      { key: 'course-selection', label: '学生选课', icon: ListChecks },
       { key: 'grades', label: '成绩系统', icon: GraduationCap },
       { key: 'library', label: '图书馆预约', icon: BookOpen },
       { key: 'forum', label: '校园论坛', icon: MessageSquareText },
