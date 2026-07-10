@@ -5,3 +5,4 @@ __pycache__/
 workspace/
 .vscode/
 .env
+.db
