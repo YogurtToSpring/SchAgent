@@ -1620,6 +1620,7 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
     # ---- 内部状态机 ----
     phase: str = "reasoning"          # reasoning | calling_tool | responding | done
     has_pending_tools: bool = False   # 上一轮 LLM 是否产出了工具调用
+    has_responded: bool = False       # 是否至少完成过一次 responding（用于多轮分隔）
 
     try:
         yield {"event": "status", "data": {"phase": "reasoning", "message": "正在思考..."}}
@@ -1659,6 +1660,9 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
                 if chunk_content and isinstance(chunk_content, str):
                     if phase == "reasoning" and not has_pending_tools:
                         phase = "responding"
+                        if has_responded:
+                            yield {"event": "token", "data": {"content": "\n\n", "phase": "responding"}}
+                        has_responded = True
                         yield {"event": "status", "data": {"phase": "responding", "message": "正在生成回复..."}}
                     yield {"event": "token", "data": {"content": chunk_content, "phase": phase}}
 
