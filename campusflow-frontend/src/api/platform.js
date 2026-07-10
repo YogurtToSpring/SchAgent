@@ -315,11 +315,6 @@ export async function cancelLibraryReservation(reservationId, userId) {
   return normalizeLibraryReservation(data?.reservation || {})
 }
 
-export async function refreshLibraryReservationStatuses() {
-  const { data } = await platformClient.post('/api/library/refresh')
-  return data
-}
-
 export async function createTodoItem(userId, todo) {
   const { data } = await platformClient.post('/api/todo/add', {
     user_id: String(userId),
@@ -670,7 +665,11 @@ function normalizeLibrarySeat(row = {}, isAvailable = null) {
 }
 
 function normalizeLibraryReservation(row = {}) {
-  const status = row.status || 'reserved'
+  const backendStatus = row.status || 'reserved'
+  const hasUsageRecord = Boolean(row.used_at || row.checked_in_at || row.check_in_at)
+  let status = backendStatus
+  if (backendStatus === 'completed' && !hasUsageRecord) status = 'expired'
+  if (backendStatus === 'reserved' && isReservationTimePast(row)) status = 'expired'
   const seatId = String(row.seat_id || '')
   const date = row.date || ''
   const startTime = row.start_time || ''
@@ -684,6 +683,7 @@ function normalizeLibraryReservation(row = {}) {
     startTime,
     endTime,
     status,
+    backendStatus,
     type: '座位',
     target: `图书馆 ${seatId}`,
     time: `${date} ${startTime}-${endTime}`,
@@ -691,6 +691,14 @@ function normalizeLibraryReservation(row = {}) {
     cancelledAt: row.cancelled_at || '',
     raw: row
   }
+}
+
+function isReservationTimePast(row = {}) {
+  const date = String(row.date || '')
+  const endTime = String(row.end_time || '')
+  if (!date || !endTime) return false
+  const endAt = new Date(`${date}T${endTime}:00`)
+  return !Number.isNaN(endAt.getTime()) && endAt.getTime() < Date.now()
 }
 
 function normalizeTodos(rows) {

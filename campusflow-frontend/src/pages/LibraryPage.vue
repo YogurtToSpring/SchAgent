@@ -55,7 +55,7 @@
       </div>
       <div>
         <span>可预约</span>
-        <strong>{{ availableCount }}</strong>
+        <strong>{{ selectableCount }}</strong>
       </div>
       <div>
         <span>已占用</span>
@@ -77,8 +77,14 @@
           <div class="seat-legend" aria-label="座位状态图例">
             <span><i class="available"></i>可预约</span>
             <span><i class="reserved"></i>已占用</span>
+            <span><i class="time-blocked"></i>本人时段冲突</span>
           </div>
         </div>
+
+        <p v-if="queryBlockReason" class="reservation-conflict-banner" role="status">
+          <AlertTriangle :size="17" />
+          {{ queryBlockReason }}
+        </p>
 
         <div v-if="loading" class="empty-state">正在查询座位...</div>
         <div v-else-if="!seats.length" class="empty-state">当前条件下没有座位数据</div>
@@ -88,9 +94,9 @@
             :key="seat.seatId"
             type="button"
             class="seat-item"
-            :class="[seat.status, { selected: selectedSeat?.seatId === seat.seatId }]"
-            :disabled="!seat.available"
-            :title="seat.description || seat.seatId"
+            :class="[seat.status, { selected: selectedSeat?.seatId === seat.seatId, 'time-blocked': seat.available && queryBlockReason }]"
+            :disabled="!seat.available || Boolean(queryBlockReason)"
+            :title="seatTitle(seat)"
             @click="selectedSeat = seat"
           >
             <strong>{{ seat.seatId }}</strong>
@@ -173,12 +179,11 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { RefreshCw, Search, X } from 'lucide-vue-next'
+import { AlertTriangle, RefreshCw, Search, X } from 'lucide-vue-next'
 import {
   cancelLibraryReservation,
   loadLibraryAvailability,
   loadLibraryReservations,
-  refreshLibraryReservationStatuses,
   reserveLibrarySeat
 } from '../api/platform'
 
@@ -194,12 +199,7 @@ const emit = defineEmits(['add-todo', 'reservations-updated', 'notification-crea
 const today = formatLocalDate(new Date())
 const seatPageSize = 24
 const allTimes = Array.from({ length: 15 }, (_, index) => `${String(index + 8).padStart(2, '0')}:00`)
-const query = reactive({
-  date: today,
-  startTime: '09:00',
-  endTime: '12:00',
-  area: 'A'
-})
+const query = reactive(createInitialReservationQuery())
 const seats = ref([])
 const reservations = ref([])
 const selectedSeat = ref(null)
@@ -208,6 +208,7 @@ const historyLoading = ref(false)
 const submitting = ref(false)
 const cancellingId = ref(null)
 const seatPage = ref(1)
+const lastSearchKey = ref('')
 const feedback = reactive({ text: '', type: '' })
 let latestSearchId = 0
 
@@ -221,6 +222,24 @@ const pagedSeats = computed(() => {
 const availableCount = computed(() => seats.value.filter(seat => seat.available).length)
 const unavailableCount = computed(() => seats.value.filter(seat => !seat.available).length)
 const activeReservationCount = computed(() => reservations.value.filter(item => item.status === 'reserved').length)
+const conflictingReservation = computed(() => {
+  return reservations.value.find(item => {
+    return item.status === 'reserved' &&
+      item.date === query.date &&
+      timeRangesOverlap(query.startTime, query.endTime, item.startTime, item.endTime)
+  })
+})
+const queryBlockReason = computed(() => {
+  if (isQueryStartPast()) return '该预约开始时间已经过去，请选择今天稍后的时段或未来日期。'
+  if (lastSearchKey.value && lastSearchKey.value !== reservationQueryKey(query)) return '查询条件已改变，请重新查询座位。'
+  if (conflictingReservation.value) {
+    const item = conflictingReservation.value
+    return `您已预约 ${item.seatId}（${item.startTime}-${item.endTime}），当前时段存在冲突，不能重复预约。`
+  }
+  return ''
+})
+
+const selectableCount = computed(() => queryBlockReason.value ? 0 : availableCount.value)
 
 watch(
   () => query.startTime,
@@ -257,9 +276,11 @@ async function searchSeats() {
     const result = await loadLibraryAvailability(searchQuery)
     if (searchId !== latestSearchId) return
     seats.value = result.seats.filter(seat => seat.area === searchQuery.area)
+    lastSearchKey.value = reservationQueryKey(searchQuery)
   } catch (error) {
     if (searchId !== latestSearchId) return
     seats.value = []
+    lastSearchKey.value = ''
     showFeedback(toErrorMessage(error, '座位查询失败，请确认后端图书馆接口可用。'), 'error')
   } finally {
     if (searchId === latestSearchId) loading.value = false
@@ -271,7 +292,6 @@ async function refreshHistory() {
   if (!userId) return
   historyLoading.value = true
   try {
-    await refreshLibraryReservationStatuses().catch(() => null)
     reservations.value = await loadLibraryReservations(userId)
     emit('reservations-updated', reservations.value)
   } catch (error) {
@@ -283,6 +303,11 @@ async function refreshHistory() {
 
 async function confirmReservation() {
   if (!selectedSeat.value || submitting.value) return
+  if (queryBlockReason.value) {
+    selectedSeat.value = null
+    showFeedback(queryBlockReason.value, 'error')
+    return
+  }
   const currentSeat = seats.value.find(seat => seat.seatId === selectedSeat.value.seatId)
   if (!currentSeat?.available) {
     selectedSeat.value = null
@@ -355,8 +380,50 @@ function statusText(status) {
   return {
     reserved: '已预约',
     cancelled: '已取消',
-    completed: '已完成'
+    completed: '已完成',
+    expired: '预约已结束'
   }[status] || status
+}
+
+function seatTitle(seat) {
+  if (!seat.available) return `${seat.seatId} 已被占用`
+  if (queryBlockReason.value) return queryBlockReason.value
+  return seat.description || seat.seatId
+}
+
+function reservationQueryKey(value) {
+  return [value.date, value.startTime, value.endTime, value.area].join('|')
+}
+
+function timeRangesOverlap(startTime, endTime, otherStartTime, otherEndTime) {
+  return timeToMinutes(startTime) < timeToMinutes(otherEndTime) && timeToMinutes(endTime) > timeToMinutes(otherStartTime)
+}
+
+function timeToMinutes(value) {
+  const [hour, minute] = String(value || '00:00').split(':').map(Number)
+  return hour * 60 + minute
+}
+
+function isQueryStartPast() {
+  if (query.date !== today) return query.date < today
+  const now = new Date()
+  return timeToMinutes(query.startTime) <= now.getHours() * 60 + now.getMinutes()
+}
+
+function createInitialReservationQuery() {
+  const now = new Date()
+  const nextHour = Math.max(8, now.getHours() + 1)
+  if (nextHour >= 22) {
+    const tomorrow = new Date(now)
+    tomorrow.setDate(now.getDate() + 1)
+    return { date: formatLocalDate(tomorrow), startTime: '09:00', endTime: '12:00', area: 'A' }
+  }
+  return {
+    date: formatLocalDate(now),
+    startTime: `${String(nextHour).padStart(2, '0')}:00`,
+    endTime: `${String(Math.min(nextHour + 3, 22)).padStart(2, '0')}:00`,
+    area: 'A'
+  }
 }
 
 function showFeedback(text, type) {
