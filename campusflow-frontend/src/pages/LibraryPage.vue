@@ -84,7 +84,7 @@
         <div v-else-if="!seats.length" class="empty-state">当前条件下没有座位数据</div>
         <div v-else class="seat-grid library-seat-grid">
           <button
-            v-for="seat in visibleSeats"
+            v-for="seat in pagedSeats"
             :key="seat.seatId"
             type="button"
             class="seat-item"
@@ -98,14 +98,13 @@
           </button>
         </div>
 
-        <button
-          v-if="visibleSeats.length < seats.length"
-          class="ghost-action load-more-action"
-          type="button"
-          @click="visibleLimit += 48"
-        >
-          显示更多（剩余 {{ seats.length - visibleSeats.length }} 个）
-        </button>
+        <div v-if="seats.length" class="pagination-bar library-pagination">
+          <span>第 {{ seatPage }} / {{ seatTotalPages }} 页，共 {{ seats.length }} 个座位</span>
+          <div>
+            <button class="ghost-action compact" type="button" :disabled="seatPage <= 1" @click="seatPage--">上一页</button>
+            <button class="ghost-action compact" type="button" :disabled="seatPage >= seatTotalPages" @click="seatPage++">下一页</button>
+          </div>
+        </div>
       </section>
 
       <aside class="library-side-column">
@@ -190,9 +189,10 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['add-todo', 'reservations-updated'])
+const emit = defineEmits(['add-todo', 'reservations-updated', 'notification-created'])
 
 const today = formatLocalDate(new Date())
+const seatPageSize = 24
 const allTimes = Array.from({ length: 15 }, (_, index) => `${String(index + 8).padStart(2, '0')}:00`)
 const query = reactive({
   date: today,
@@ -207,12 +207,17 @@ const loading = ref(false)
 const historyLoading = ref(false)
 const submitting = ref(false)
 const cancellingId = ref(null)
-const visibleLimit = ref(48)
+const seatPage = ref(1)
 const feedback = reactive({ text: '', type: '' })
+let latestSearchId = 0
 
 const startTimes = computed(() => allTimes.slice(0, -1))
 const endTimes = computed(() => allTimes.filter(time => time > query.startTime))
-const visibleSeats = computed(() => seats.value.slice(0, visibleLimit.value))
+const seatTotalPages = computed(() => Math.max(1, Math.ceil(seats.value.length / seatPageSize)))
+const pagedSeats = computed(() => {
+  const start = (seatPage.value - 1) * seatPageSize
+  return seats.value.slice(start, start + seatPageSize)
+})
 const availableCount = computed(() => seats.value.filter(seat => seat.available).length)
 const unavailableCount = computed(() => seats.value.filter(seat => !seat.available).length)
 const activeReservationCount = computed(() => reservations.value.filter(item => item.status === 'reserved').length)
@@ -226,6 +231,15 @@ watch(
   }
 )
 
+watch(
+  () => query.area,
+  () => {
+    seatPage.value = 1
+    selectedSeat.value = null
+    searchSeats()
+  }
+)
+
 onMounted(refreshAll)
 
 async function refreshAll() {
@@ -233,18 +247,22 @@ async function refreshAll() {
 }
 
 async function searchSeats() {
+  const searchId = ++latestSearchId
+  const searchQuery = { ...query }
   loading.value = true
   selectedSeat.value = null
-  visibleLimit.value = 48
+  seatPage.value = 1
   clearFeedback()
   try {
-    const result = await loadLibraryAvailability(query)
-    seats.value = result.seats
+    const result = await loadLibraryAvailability(searchQuery)
+    if (searchId !== latestSearchId) return
+    seats.value = result.seats.filter(seat => seat.area === searchQuery.area)
   } catch (error) {
+    if (searchId !== latestSearchId) return
     seats.value = []
     showFeedback(toErrorMessage(error, '座位查询失败，请确认后端图书馆接口可用。'), 'error')
   } finally {
-    loading.value = false
+    if (searchId === latestSearchId) loading.value = false
   }
 }
 
@@ -265,6 +283,13 @@ async function refreshHistory() {
 
 async function confirmReservation() {
   if (!selectedSeat.value || submitting.value) return
+  const currentSeat = seats.value.find(seat => seat.seatId === selectedSeat.value.seatId)
+  if (!currentSeat?.available) {
+    selectedSeat.value = null
+    showFeedback('该座位已被占用，请重新选择。', 'error')
+    await searchSeats()
+    return
+  }
   submitting.value = true
   clearFeedback()
   try {
@@ -284,10 +309,18 @@ async function confirmReservation() {
       priority: 'medium',
       note: `${query.startTime}-${query.endTime}，请按时到馆。`
     })
+    emit('notification-created', {
+      type: '图书馆预约',
+      title: `${seatId} 预约成功`,
+      content: `${query.date} ${query.startTime}-${query.endTime}，请按时到馆。`,
+      link: 'library'
+    })
     await Promise.all([searchSeats(), refreshHistory()])
     showFeedback(`${seatId} 预约成功。`, 'success')
   } catch (error) {
-    showFeedback(toErrorMessage(error, '预约失败，请稍后重试。'), 'error')
+    const message = toErrorMessage(error, '预约失败，请稍后重试。')
+    if (error?.response?.status === 409) await searchSeats()
+    showFeedback(message, 'error')
   } finally {
     submitting.value = false
   }
@@ -299,6 +332,12 @@ async function cancelReservation(item) {
   clearFeedback()
   try {
     await cancelLibraryReservation(item.backendId || item.id, currentUserId())
+    emit('notification-created', {
+      type: '图书馆预约',
+      title: `${item.seatId} 预约已取消`,
+      content: `${item.date} ${item.startTime}-${item.endTime} 的预约已成功取消。`,
+      link: 'library'
+    })
     await Promise.all([searchSeats(), refreshHistory()])
     showFeedback(`${item.seatId} 的预约已取消。`, 'success')
   } catch (error) {

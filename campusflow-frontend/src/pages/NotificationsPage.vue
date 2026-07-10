@@ -19,6 +19,7 @@
           <div>
             <span>{{ notice.type }}</span>
             <strong>{{ notice.title }}</strong>
+            <p v-if="notice.content">{{ notice.content }}</p>
             <small>{{ notice.time }}</small>
           </div>
           <button class="ghost-action" type="button" @click="$emit('open-notice', notice)">

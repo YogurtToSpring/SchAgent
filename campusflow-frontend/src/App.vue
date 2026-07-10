@@ -95,6 +95,7 @@
       :current-user="currentUser"
       @reservations-updated="syncReservations"
       @add-todo="addTodo"
+      @notification-created="addPersonalNotification"
     />
 
     <ForumPage
@@ -358,6 +359,20 @@ function openNotice(notice) {
   const target = notifications.value.find(item => item.id === notice.id)
   if (target) target.status = 'read'
   if (notice.link && canAccessView(notice.link)) activeView.value = notice.link
+}
+
+function addPersonalNotification(payload) {
+  notifications.value.unshift({
+    id: `notice-${Date.now()}`,
+    type: payload.type || '系统通知',
+    title: payload.title,
+    content: payload.content || '',
+    time: '刚刚',
+    status: 'unread',
+    link: payload.link || 'notifications',
+    ownerId: backendUserId(currentUser.value),
+    audienceRoles: [currentUser.value?.role].filter(Boolean)
+  })
 }
 
 function sendNotification(payload) {

@@ -588,7 +588,7 @@ select:focus {
 .quick-create,
 .reservation-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 160px auto;
+  grid-template-columns: minmax(220px, 1fr) 160px 150px auto;
   gap: 10px;
 }
 
@@ -835,6 +835,8 @@ select:focus {
 .seat-item.reserved {
   background: #f0f2f4;
   color: #8a97a0;
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .detail-list {
@@ -2430,6 +2432,7 @@ th {
 
 .library-seat-grid {
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  align-content: start;
 }
 
 .library-seat-grid .seat-item {
@@ -2447,6 +2450,11 @@ th {
 .reservation-submit {
   width: 100%;
   margin-top: 14px;
+}
+
+.library-pagination {
+  border-top: 1px solid #e1e7eb;
+  padding-top: 14px;
 }
 
 .selected-seat-detail {
@@ -2660,6 +2668,18 @@ th {
 
 .selected-course-row {
   background: #f4faf8;
+}
+
+.notice-item > div {
+  display: grid;
+  gap: 4px;
+}
+
+.notice-item p {
+  margin: 1px 0;
+  color: #52616b;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 pre {
