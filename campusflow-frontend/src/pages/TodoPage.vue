@@ -6,7 +6,7 @@
         <p>{{ pendingCount }} 项待处理，可安排未来任意日期</p>
       </div>
       <form class="quick-create" @submit.prevent="submitTodo">
-        <input v-model="draft.title" placeholder="新增待办，例如 复习数据库第三章" />
+        <input v-model="draft.title" />
         <input v-model="draft.date" type="date" :min="today()" title="选择未来的待办日期" />
         <select v-model="draft.priority">
           <option value="high">高优先级</option>

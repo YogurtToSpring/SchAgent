@@ -12,7 +12,7 @@
       </div>
 
       <form class="filter-bar grade-search-bar" @submit.prevent="searchStudentGrades">
-        <input v-model="adminSearch" placeholder="输入学生学号，例如 2024001" />
+        <input v-model="adminSearch" />
         <button class="primary-action compact" type="submit">查询</button>
       </form>
 
@@ -150,7 +150,7 @@
           <p>{{ pageSubtitle }}</p>
         </div>
         <div class="section-actions">
-          <input v-model="selectedSemester" placeholder="学期" />
+          <input v-model="selectedSemester" />
           <button class="ghost-action" type="button" :disabled="loading" @click="$emit('refresh-grades')">
             {{ loading ? '同步中' : '同步成绩' }}
           </button>
@@ -160,11 +160,11 @@
       <form v-if="canManageGrades" class="grade-entry-form" @submit.prevent="submitGrade">
         <label>
           课程号
-          <input v-model="gradeForm.courseId" placeholder="输入课程号" />
+          <input v-model="gradeForm.courseId" />
         </label>
         <label>
           学号
-          <input v-model="gradeForm.studentNo" placeholder="输入学生学号" />
+          <input v-model="gradeForm.studentNo" />
         </label>
         <label>
           分数
@@ -172,15 +172,15 @@
         </label>
         <label>
           学期
-          <input v-model="gradeForm.semester" placeholder="2025-2026-2" />
+          <input v-model="gradeForm.semester" />
         </label>
         <label>
           考试类型
-          <input v-model="gradeForm.examType" placeholder="期末考试" />
+          <input v-model="gradeForm.examType" />
         </label>
         <label>
           备注
-          <input v-model="gradeForm.remark" placeholder="可选" />
+          <input v-model="gradeForm.remark" />
         </label>
         <button class="primary-action compact" type="submit" :disabled="loading || !gradeForm.courseId || !gradeForm.studentNo">
           保存成绩

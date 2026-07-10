@@ -46,7 +46,7 @@
         <div class="course-selection-filters">
           <label class="search-input-field">
             <Search :size="16" />
-            <input v-model="filters.keyword" placeholder="搜索课程号、课程名、教师或地点" />
+            <input v-model="filters.keyword" />
           </label>
           <select v-model="filters.semester" aria-label="按学期筛选">
             <option value="">全部学期</option>

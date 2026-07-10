@@ -26,19 +26,19 @@
         <form v-if="isAdmin" class="structured-form class-create-form" @submit.prevent="addClass">
           <label>
             班级号
-            <input v-model="newClass.classId" placeholder="例如 SE2024-1" />
+            <input v-model="newClass.classId" />
           </label>
           <label>
             班级名称
-            <input v-model="newClass.name" placeholder="例如 软件工程1班" />
+            <input v-model="newClass.name" />
           </label>
           <label>
             年级
-            <input v-model="newClass.grade" placeholder="例如 2024级" />
+            <input v-model="newClass.grade" />
           </label>
           <label>
             专业
-            <input v-model="newClass.major" placeholder="例如 软件工程" />
+            <input v-model="newClass.major" />
           </label>
           <label>
             容量
@@ -46,7 +46,7 @@
           </label>
           <label class="search-field">
             班主任
-            <input v-model="newClass.teacherQuery" placeholder="搜索教师姓名或工号" />
+            <input v-model="newClass.teacherQuery" />
             <div v-if="teacherSuggestions(newClass.teacherQuery).length" class="search-suggestions">
               <button
                 v-for="teacher in teacherSuggestions(newClass.teacherQuery)"
@@ -62,9 +62,9 @@
         </form>
 
         <div class="filter-bar">
-          <input v-model="classFilters.keyword" placeholder="搜索班级号、班级名、班主任" />
-          <input v-model="classFilters.grade" placeholder="按年级筛选" />
-          <input v-model="classFilters.major" placeholder="按专业筛选" />
+          <input v-model="classFilters.keyword" />
+          <input v-model="classFilters.grade" />
+          <input v-model="classFilters.major" />
         </div>
 
         <div class="data-table-wrap">
@@ -140,8 +140,8 @@
 
       <template v-else-if="activeModule === 'students' && isAdmin">
         <div class="filter-bar">
-          <input v-model="studentFilters.keyword" placeholder="搜索姓名、学号、当前班级" />
-          <input v-model="studentFilters.targetClass" placeholder="搜索目标班级号或班级名" />
+          <input v-model="studentFilters.keyword" />
+          <input v-model="studentFilters.targetClass" />
         </div>
 
         <div class="data-table-wrap">
@@ -163,7 +163,6 @@
                   <div class="inline-search">
                     <input
                       :value="classQueries[student.id] ?? studentFilters.targetClass"
-                      placeholder="搜索班级后确认调整"
                       @input="classQueries[student.id] = $event.target.value"
                     />
                     <div v-if="studentClassSuggestions(student).length" class="search-suggestions">
@@ -196,15 +195,15 @@
         <form class="structured-form account-import-form" @submit.prevent="stageStudent">
           <label>
             姓名
-            <input v-model="studentDraft.name" placeholder="例如 张三" />
+            <input v-model="studentDraft.name" />
           </label>
           <label>
             学号
-            <input v-model="studentDraft.studentNo" placeholder="例如 2024001" />
+            <input v-model="studentDraft.studentNo" />
           </label>
           <label class="search-field">
             班级
-            <input v-model="studentDraft.classQuery" placeholder="搜索班级号或班级名" />
+            <input v-model="studentDraft.classQuery" />
             <div v-if="classSuggestions(studentDraft.classQuery).length" class="search-suggestions">
               <button
                 v-for="item in classSuggestions(studentDraft.classQuery)"
@@ -218,7 +217,7 @@
           </label>
           <label>
             初始密码
-            <input v-model="studentDraft.password" placeholder="默认 123456" />
+            <input v-model="studentDraft.password" />
           </label>
           <button class="primary-action compact" type="submit">加入待导入</button>
         </form>
@@ -262,15 +261,15 @@
         <form v-if="isAdmin" class="structured-form course-import-form" @submit.prevent="addCourse">
           <label>
             课程编号
-            <input v-model="newCourse.courseId" placeholder="例如 123456" />
+            <input v-model="newCourse.courseId" />
           </label>
           <label>
             课程名称
-            <input v-model="newCourse.courseName" placeholder="例如 数据库原理" />
+            <input v-model="newCourse.courseName" />
           </label>
           <label class="search-field">
             面向班级
-            <input v-model="newCourse.classQuery" placeholder="搜索班级号或班级名" />
+            <input v-model="newCourse.classQuery" />
             <div v-if="classSuggestions(newCourse.classQuery).length" class="search-suggestions">
               <button
                 v-for="item in classSuggestions(newCourse.classQuery)"
@@ -284,7 +283,7 @@
           </label>
           <label class="search-field">
             任课教师
-            <input v-model="newCourse.teacherQuery" placeholder="搜索教师姓名或工号" />
+            <input v-model="newCourse.teacherQuery" />
             <div v-if="teacherSuggestions(newCourse.teacherQuery).length" class="search-suggestions">
               <button
                 v-for="teacher in teacherSuggestions(newCourse.teacherQuery)"
@@ -298,21 +297,20 @@
           </label>
           <label>
             星期
-            <input v-model="newCourse.weekday" placeholder="例如 周一" />
+            <input v-model="newCourse.weekday" />
           </label>
           <label>
             开始时间
-            <input v-model="newCourse.startTime" placeholder="08:00" />
+            <input v-model="newCourse.startTime" />
           </label>
           <label>
             结束时间
-            <input v-model="newCourse.endTime" placeholder="09:40" />
+            <input v-model="newCourse.endTime" />
           </label>
           <label class="search-field">
             地点
             <input
               v-model="newCourse.roomQuery"
-              placeholder="搜索教室，如 3-3-301"
               @blur="scheduleCloseRoomSuggestions"
               @focus="roomSuggestionsOpen = true"
               @input="roomSuggestionsOpen = true"
@@ -331,26 +329,26 @@
           </label>
           <label>
             起始周
-            <input v-model="newCourse.weekStart" placeholder="1" />
+            <input v-model="newCourse.weekStart" />
           </label>
           <label>
             结束周
-            <input v-model="newCourse.weekEnd" placeholder="16" />
+            <input v-model="newCourse.weekEnd" />
           </label>
           <label>
             学期
-            <input v-model="newCourse.semester" placeholder="2025-2026-2" />
+            <input v-model="newCourse.semester" />
           </label>
           <label>
             学分
-            <input v-model="newCourse.credit" placeholder="2" type="number" min="0" step="0.5" />
+            <input v-model="newCourse.credit" type="number" min="0" step="0.5" />
           </label>
           <button class="primary-action compact" type="submit">确认添加课程</button>
         </form>
 
         <div class="filter-bar">
-          <input v-model="courseFilters.keyword" placeholder="搜索课程号、课程名、班级、教师" />
-          <input v-model="courseFilters.semester" placeholder="按学期筛选" />
+          <input v-model="courseFilters.keyword" />
+          <input v-model="courseFilters.semester" />
         </div>
 
         <div class="course-card-list">
@@ -433,11 +431,11 @@
         <form class="structured-form notice-compose-form" @submit.prevent="sendNotice">
           <label>
             标题
-            <input v-model="noticeDraft.title" placeholder="通知标题" />
+            <input v-model="noticeDraft.title" />
           </label>
           <label>
             内容
-            <input v-model="noticeDraft.content" placeholder="通知内容" />
+            <input v-model="noticeDraft.content" />
           </label>
           <button class="primary-action compact" type="submit">确认发送</button>
         </form>

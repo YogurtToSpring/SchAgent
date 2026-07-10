@@ -14,8 +14,8 @@
       <select v-model="draft.channel">
         <option v-for="channel in channels" :key="channel">{{ channel }}</option>
       </select>
-      <input v-model="draft.title" placeholder="标题" />
-      <textarea v-model="draft.summary" rows="3" placeholder="正文摘要"></textarea>
+      <input v-model="draft.title" />
+      <textarea v-model="draft.summary" rows="3"></textarea>
       <button class="primary-action compact" type="submit">发布</button>
     </form>
 

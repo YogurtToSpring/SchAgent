@@ -4,7 +4,6 @@
       v-model="text"
       :disabled="disabled"
       rows="1"
-      placeholder="输入你的问题，例如：明天上午我有没有课？"
       @keydown.enter.exact.prevent="submit"
       @keydown.shift.enter.stop
     ></textarea>

@@ -23,7 +23,6 @@
           <input
             class="session-title-input"
             :value="session.title"
-            placeholder="新会话"
             :disabled="loading && session.localId !== activeLocalSessionId"
             @click.stop
             @focus="switchSession(session.localId)"
@@ -46,7 +45,6 @@
           <input
             class="conversation-title-input"
             :value="currentSessionTitle"
-            placeholder="新会话"
             @input="renameSession(activeLocalSessionId, $event.target.value)"
             @keydown.enter.prevent="$event.target.blur()"
           />

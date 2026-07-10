@@ -28,22 +28,21 @@
         </label>
         <label v-if="mode === 'register'">
           姓名
-          <input v-model="name" autocomplete="name" placeholder="请输入真实姓名" />
+          <input v-model="name" autocomplete="name" />
         </label>
         <label>
           账号
-          <input v-model="username" autocomplete="username" placeholder="学号 / 教师编号 / 管理员编号" />
+          <input v-model="username" autocomplete="username" />
         </label>
         <label v-if="mode === 'register' && role === 'student'">
           班级
-          <input v-model="className" placeholder="例如 弘毅班" />
+          <input v-model="className" />
         </label>
         <label>
           密码
           <input
             v-model="password"
             autocomplete="current-password"
-            placeholder="123456"
             type="password"
           />
         </label>
