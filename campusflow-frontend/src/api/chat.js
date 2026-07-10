@@ -117,10 +117,6 @@ async function requestStream(payload, handlers) {
 
   result.artifacts = mergeArtifacts(
     result.artifacts,
-    inferFileArtifactsFromText(result.answer),
-  );
-  result.artifacts = mergeArtifacts(
-    result.artifacts,
     filesToArtifacts(result.files),
   );
   handlers.onDone?.(result);
@@ -182,17 +178,6 @@ function applyStreamEvent(eventName, data, result, handlers) {
     call.status = data.success === false ? "failed" : "success";
     call.output = data.result || "";
     handlers.onToolResult?.(call, data);
-    const inferredArtifacts = inferFileArtifactsFromText(data.result || "");
-    if (inferredArtifacts.length) {
-      result.artifacts = mergeArtifacts(result.artifacts, inferredArtifacts);
-      result.files = mergeFiles(
-        result.files,
-        inferredArtifacts.map(artifactToFile),
-      );
-      for (const artifact of inferredArtifacts) {
-        handlers.onFileReady?.(artifact, data);
-      }
-    }
     return;
   }
 
@@ -238,16 +223,6 @@ function normalizeChatResponse(response) {
   };
   normalized.artifacts = mergeArtifacts(
     normalized.artifacts,
-    inferFileArtifactsFromText(normalized.answer || ""),
-  );
-  normalized.artifacts = mergeArtifacts(
-    normalized.artifacts,
-    inferFileArtifactsFromText(
-      (normalized.tool_calls || []).map((call) => call.output || "").join("\n"),
-    ),
-  );
-  normalized.artifacts = mergeArtifacts(
-    normalized.artifacts,
     filesToArtifacts(normalized.files),
   );
   return normalized;
@@ -276,81 +251,6 @@ function normalizeFile(file = {}) {
 
 function filesToArtifacts(files = []) {
   return files.map(fileToArtifact);
-}
-
-function inferFileArtifactsFromText(text = "") {
-  return extractFileNames(text).map((name) =>
-    fileToArtifact(normalizeFile({ name, path: name })),
-  );
-}
-
-function extractFileNames(text = "") {
-  const source = String(text || "");
-  const extensionPattern =
-    /\.(?:pdf|md|docx?|xlsx?|pptx?|csv|txt|html?|json)/gi;
-  const names = [];
-  let match = extensionPattern.exec(source);
-  while (match) {
-    const end = match.index + match[0].length;
-    const start = findFileNameStart(source, match.index);
-    const name = cleanFileName(source.slice(start, end));
-    if (name && !names.includes(name)) {
-      names.push(name);
-    }
-    match = extensionPattern.exec(source);
-  }
-  return names;
-}
-
-function findFileNameStart(source, extensionIndex) {
-  const separators = new Set([
-    " ",
-    "\n",
-    "\t",
-    "\r",
-    '"',
-    "'",
-    "`",
-    "<",
-    ">",
-    "，",
-    "。",
-    "；",
-    "、",
-    "：",
-    ":",
-    "（",
-    "(",
-    "【",
-    "[",
-    "《",
-    "/",
-  ]);
-  let index = extensionIndex - 1;
-  while (index >= 0 && !separators.has(source[index])) {
-    index -= 1;
-  }
-  return index + 1;
-}
-
-function cleanFileName(name = "") {
-  const cleaned = String(name)
-    .replace(/^[/\\]+/, "")
-    .replace(/[，。；、：:）)】\]》>]+$/g, "")
-    .trim();
-  if (!cleaned || cleaned.startsWith(".")) return "";
-  return cleaned;
-}
-
-function artifactToFile(artifact = {}) {
-  return normalizeFile({
-    name: artifact.name,
-    path: artifact.path,
-    size: artifact.size,
-    size_formatted: artifact.size_formatted,
-    modified_at: artifact.modified_at,
-    url: artifact.url,
-  });
 }
 
 function fileToArtifact(file) {

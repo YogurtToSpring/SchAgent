@@ -62,6 +62,7 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - markdown_to_html: 将 Markdown 文本转换为 HTML
 - markdown_to_pdf: 将 Markdown 文本转换为 PDF 文件
 - use_python_pptx: 使用 python-pptx 库操作 PPTX 文件（创建/编辑幻灯片）
+- share_files: 将生成的文件共享给用户下载（在 write_file / markdown_to_pdf / use_python_pptx 生成文件后必须调用）
 
 ## 校园信息查询工具（从学校数据库获取真实数据）：
 - query_student_schedule: 查询学生个人课表（按学号 + 可选星期几）
@@ -95,8 +96,9 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 2. 对于需要长期记住的信息（如课表），主动使用 save_memory 保存
 3. 对于课表、课程、班级、学生、教室等校园信息查询，必须使用对应的 query_ 系列工具从学校数据库获取准确数据，不要凭猜测回答
 4. 对于需要制作PPT的请求，请使用 use_python_pptx 工具生成 PPTX 文件，色调以浅色系为主，可以结合用户制作的PPT调整，这个工具已经预导入了所需的模块，直接使用预导入的对象即可。
-5. 如果不需要调用工具就直接生成回答
-6. 回答简洁、友好
+5. ⚠️ 每当你使用 write_file、markdown_to_pdf 或 use_python_pptx 为用户生成了文件后，必须紧接着调用 share_files 工具将文件共享给用户，否则用户无法下载。share_files 接收一个 file_names 列表参数，传入你刚刚生成的文件名。
+6. 如果不需要调用工具就直接生成回答
+7. 回答简洁、友好
 
 ## 角色感知原则：
 - 每条消息开头会附带 [用户信息] 块，包含当前用户的姓名、身份、班级等信息
@@ -386,6 +388,46 @@ def write_file(file_name: str, content: str) -> str:
         return f"已将内容写入文件：{file_name}"
     except Exception as e:
         return f"写入文件出错：{str(e)}"
+
+
+@tool
+def share_files(file_names: list) -> str:
+    """将已生成的工作区文件共享给用户下载。
+
+    ⚠️ 重要：每当你使用 write_file、markdown_to_pdf 或 use_python_pptx 为用户生成了文件后，
+    必须调用此工具来通知系统这些文件可供用户下载。
+
+    参数 file_names: 要共享的文件名列表，如 ['report.pdf', 'slides.pptx']。
+    文件名是相对于用户工作区的路径，只传文件名即可，不要传绝对路径。"""
+    user_ws = _get_user_workspace()
+    shared = []
+    errors = []
+
+    for name in file_names:
+        try:
+            resolved = (user_ws / name).resolve()
+            # 路径遍历安全检查
+            if not str(resolved).startswith(str(WORKSPACE_DIR.resolve())):
+                errors.append(f"{name}: 非法文件路径")
+                continue
+            if not resolved.exists():
+                errors.append(f"{name}: 文件不存在")
+                continue
+            if not resolved.is_file():
+                errors.append(f"{name}: 不是文件")
+                continue
+            stat = resolved.stat()
+            shared.append({
+                "name": resolved.name,
+                "path": str(resolved.relative_to(WORKSPACE_DIR)),
+                "size": stat.st_size,
+                "size_formatted": _format_size(stat.st_size),
+                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            })
+        except Exception as e:
+            errors.append(f"{name}: {str(e)}")
+
+    return json.dumps({"shared": shared, "errors": errors}, ensure_ascii=False)
 
 
 @tool
@@ -1480,7 +1522,7 @@ checkpointer = MemorySaver()
 
 tools = [
     get_weather, calculator, query_day_of_week, get_current_time,
-    list_files, read_file, write_file,
+    list_files, read_file, write_file, share_files,
     save_memory, recall_memory,
     markdown_to_html, markdown_to_pdf, use_python_pptx,
     query_student_schedule, query_course_info, query_class_students,
@@ -1697,16 +1739,27 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
             # ================================================================
             elif kind == "on_tool_end":
                 tool_name = event.get("name", "unknown")
-                raw_output = str(event["data"].get("output", ""))
+                output = event["data"].get("output", "")
+                # ToolMessage 对象需要用 .content 取实际内容，str() 得到的是 repr 格式
+                if hasattr(output, 'content'):
+                    raw_output = str(output.content)
+                else:
+                    raw_output = str(output)
+                # raw_output = str(event["data"].get("output", ""))
                 # 截断过长结果
                 result_text = raw_output[:500] + "..." if len(raw_output) > 500 else raw_output
                 yield {"event": "tool_result", "data": {"name": tool_name, "result": result_text, "success": True}}
 
-                # ★ 检测文件生成工具，产出 file_ready 事件供前端渲染下载卡片
-                if tool_name in ("write_file", "markdown_to_pdf"):
-                    file_info = _extract_file_info(tool_name, raw_output)
-                    if file_info:
-                        yield {"event": "file_ready", "data": file_info}
+                if tool_name == "share_files":
+                    try:
+                        parsed = json.loads(raw_output)
+                        current_uid = _current_user_id.get()
+                        uid_param = f"?user_id={current_uid}" if current_uid else ""
+                        for file_info in parsed.get("shared", []):
+                            file_info["download_url"] = f"/api/files/{file_info['name']}{uid_param}"
+                            yield {"event": "file_ready", "data": file_info}
+                    except (json.JSONDecodeError, KeyError):
+                        pass
 
                 # 回归 reasoning，等待 LLM 分析工具结果
                 phase = "reasoning"
@@ -1779,47 +1832,6 @@ def delete_user_memory(username: str, key: Optional[str] = None) -> Dict[str, An
     """删除用户长期记忆。不指定 key 则清空全部。"""
     memory_store.delete(username, key)
     return {"username": username, "key": key, "status": "deleted"}
-
-
-def _extract_file_info(tool_name: str, output: str) -> Optional[dict]:
-    """从工具输出中提取文件元数据，供 file_ready SSE 事件使用。
-
-    支持的输出格式：
-        write_file      → "已将内容写入文件：notes.txt"
-        markdown_to_pdf → "已将 Markdown 转换为 PDF: C:\\...\\workspace\\output.pdf"
-
-    Returns:
-        {"name", "path", "size", "size_formatted", "modified_at"} 或 None
-    """
-    file_path = None
-
-    if tool_name == "markdown_to_pdf":
-        match = re.search(r'PDF:\s*(.+)$', output)
-        if match:
-            file_path = Path(match.group(1).strip())
-
-    elif tool_name == "write_file":
-        match = re.search(r'写入文件[：:]\s*(.+)$', output)
-        if match:
-            file_name = match.group(1).strip()
-            try:
-                file_path = _resolve_user_path(file_name)
-            except ValueError:
-                return None
-
-    if file_path and file_path.exists() and file_path.is_file():
-        # 安全检查：确保在工作区范围内
-        if not str(file_path.resolve()).startswith(str(WORKSPACE_DIR.resolve())):
-            return None
-        stat = file_path.stat()
-        return {
-            "name": file_path.name,
-            "path": str(file_path.relative_to(WORKSPACE_DIR)),
-            "size": stat.st_size,
-            "size_formatted": _format_size(stat.st_size),
-            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        }
-    return None
 
 
 def _format_size(size_bytes: int) -> str:

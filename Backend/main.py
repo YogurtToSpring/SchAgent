@@ -107,6 +107,7 @@ TOOL_LABELS = {
     "recall_memory": "读取记忆",
     "markdown_to_html": "Markdown转HTML",
     "markdown_to_pdf": "Markdown转PDF",
+    "share_files": "共享文件",
     "query_student_schedule": "课表查询",
     "query_course_info": "课程查询",
     "query_class_students": "班级查询",
