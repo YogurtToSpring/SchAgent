@@ -14,6 +14,8 @@ SchAgent LangChain 核心模块
 """
 
 import os
+import subprocess
+import sys
 import contextvars
 import re
 import json
@@ -56,13 +58,18 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 - get_current_time: 获取当前日期和时间
 - read_file: 读取工作区中的文件
 - write_file: 将内容写入工作区文件
+- query_file_line: 查询工作区文件的指定行内容
+- find_file_content: 在工作区文件中查找包含关键字的行
+- edit_file_line: 编辑工作区文件的指定行内容
 - list_files: 列出工作区目录下的内容
 - save_memory: 保存用户的长期记忆（课表、偏好、笔记等）
 - recall_memory: 读取用户的长期记忆
 - markdown_to_html: 将 Markdown 文本转换为 HTML
 - markdown_to_pdf: 将 Markdown 文本转换为 PDF 文件
 - use_python_pptx: 使用 python-pptx 库操作 PPTX 文件（创建/编辑幻灯片）
-- share_files: 将生成的文件共享给用户下载（在 write_file / markdown_to_pdf / use_python_pptx 生成文件后必须调用）
+- init_pptproject: 初始化 PPT 项目目录，返回 PPT 制作工作流指引
+- ppt_export: 将项目 svg_output/ 下的 SVG 后处理并导出为 PPTX 文件
+- share_files: 将生成的文件共享给用户下载（在 write_file / markdown_to_pdf / use_python_pptx / ppt_export 生成文件后必须调用）
 
 ## 校园信息查询工具（从学校数据库获取真实数据）：
 - query_student_schedule: 查询学生个人课表（按学号 + 可选星期几）
@@ -95,8 +102,10 @@ SYSTEM_PROMPT = """你是一个有用的校园生活智能助手，名为 SchAge
 1. 维护对话上下文，记住用户在当前会话中说过的信息
 2. 对于需要长期记住的信息（如课表），主动使用 save_memory 保存
 3. 对于课表、课程、班级、学生、教室等校园信息查询，必须使用对应的 query_ 系列工具从学校数据库获取准确数据，不要凭猜测回答
-4. 对于需要制作PPT的请求，请使用 use_python_pptx 工具生成 PPTX 文件，色调以浅色系为主，可以结合用户制作的PPT调整，这个工具已经预导入了所需的模块，直接使用预导入的对象即可。
-5. ⚠️ 每当你使用 write_file、markdown_to_pdf 或 use_python_pptx 为用户生成了文件后，必须紧接着调用 share_files 工具将文件共享给用户，否则用户无法下载。share_files 接收一个 file_names 列表参数，传入你刚刚生成的文件名。
+4. 对于需要制作PPT的请求，提供两种方案：
+   a) **PPT Master 工作流**（推荐用于制作完整的演示文稿）：先调用 init_pptproject 初始化项目并获取制作指引，然后按照指引在项目 svg_output/ 目录下逐页生成 SVG 页面文件，全部页面完成后调用 ppt_export 导出为 PPTX，最后调用 share_files 共享导出的 PPTX 文件。
+   b) **低阶 PPTX 操作**（适用于编辑已有 PPTX）：使用 use_python_pptx 工具直接操作 PPTX 文件，该工具已预导入 python-pptx 模块，直接使用预导入的对象即可。
+5. ⚠️ 每当你使用 write_file、markdown_to_pdf、use_python_pptx 或 ppt_export 为用户生成了文件后，必须紧接着调用 share_files 工具将文件共享给用户，否则用户无法下载。share_files 接收一个 file_names 列表参数，传入你刚刚生成的文件名。
 6. 如果不需要调用工具就直接生成回答
 7. 回答简洁、友好
 
@@ -389,12 +398,70 @@ def write_file(file_name: str, content: str) -> str:
     except Exception as e:
         return f"写入文件出错：{str(e)}"
 
+@tool
+def query_file_line(file_name: str, line_number: int) -> str:
+    """查询工作区中指定文件的某一行内容。参数 file_name 为文件名称，line_number 为行号（从 1 开始）。"""
+    try:
+        file_path = _resolve_user_path(file_name)
+    except ValueError as e:
+        return f"错误：{str(e)}"
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        if line_number < 1 or line_number > len(lines):
+            return f"行号 {line_number} 超出文件总行数 {len(lines)}。"
+        return f"文件 '{file_name}' 的第 {line_number} 行内容：{lines[line_number - 1].rstrip()}"
+    except FileNotFoundError:
+        return f"文件 '{file_name}' 不存在。"
+    except Exception as e:
+        return f"查询文件行出错：{str(e)}"
+    
+@tool
+def find_file_content(file_name: str, keyword: str) -> str:
+    """在工作区中指定文件中查找包含关键字的行。参数 file_name 为文件名称，keyword 为要查找的关键字。"""
+    try:
+        file_path = _resolve_user_path(file_name)
+    except ValueError as e:
+        return f"错误：{str(e)}"
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        matching_lines = [f"{i + 1}: {line.rstrip()}" for i, line in enumerate(lines) if keyword in line]
+        if not matching_lines:
+            return f"在文件 '{file_name}' 中未找到包含关键字 '{keyword}' 的行。"
+        return f"在文件 '{file_name}' 中找到以下包含关键字 '{keyword}' 的行：\n" + "\n".join(matching_lines)
+    except FileNotFoundError:
+        return f"文件 '{file_name}' 不存在。"
+    except Exception as e:
+        return f"查找文件内容出错：{str(e)}"
+
+
+@tool
+def edit_file_line(file_name: str, line_number: int, new_content: str) -> str:
+    """编辑工作区中指定文件的某一行内容。参数 file_name 为文件名称，line_number 为行号（从 1 开始），new_content 为新的行内容。"""
+    try:
+        file_path = _resolve_user_path(file_name)
+    except ValueError as e:
+        return f"错误：{str(e)}"
+    try:
+        if not file_path.exists():
+            return f"文件 '{file_name}' 不存在。"
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        if line_number < 1 or line_number > len(lines):
+            return f"行号 {line_number} 超出文件总行数 {len(lines)}。"
+        lines[line_number - 1] = new_content + '\n'
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+        return f"已将文件 '{file_name}' 的第 {line_number} 行修改为：{new_content}"
+    except Exception as e:
+        return f"编辑文件出错：{str(e)}"
 
 @tool
 def share_files(file_names: list) -> str:
     """将已生成的工作区文件共享给用户下载。
 
-    ⚠️ 重要：每当你使用 write_file、markdown_to_pdf 或 use_python_pptx 为用户生成了文件后，
+    重要：每当你使用 write_file、markdown_to_pdf 或 use_python_pptx 为用户生成了文件后，
     必须调用此工具来通知系统这些文件可供用户下载。
 
     参数 file_names: 要共享的文件名列表，如 ['report.pdf', 'slides.pptx']。
@@ -554,10 +621,7 @@ def markdown_to_pdf(markdown_text: str, output_file: str = "output.pdf") -> str:
 def use_python_pptx(command: str) -> str:
     """使用 python-pptx 库操作 PPTX 文件。参数 command 为一段 Python 代码字符串，
     该代码可以使用已导入的 python-pptx 模块（pptx）来创建或编辑 PowerPoint 文件。
-    代码中可使用以下已导入的对象：
-    - Presentation (from pptx import Presentation)
-    - Inches, Pt, Emu (from pptx.util)
-    - 以及 pptx 整个模块
+    代码中已经预先import io/sys/traceback 模块和对象，
     注意：代码中禁止使用 os、sys、subprocess、shutil、importlib、__import__、
     open（仅允许 Presentation.save 内部使用）、eval、exec、compile 等危险操作。
     工作目录为 WORKSPACE_DIR，生成的文件请放在当前目录下。"""
@@ -581,7 +645,7 @@ def use_python_pptx(command: str) -> str:
     command_lower = command.lower()
     for kw in FORBIDDEN_KEYWORDS:
         if kw.lower() in command_lower:
-            return f"❌ 安全检查未通过：代码中包含禁止的关键字 '{kw}'。请移除相关调用后重试。"
+            return f" 安全检查未通过：代码中包含禁止的关键字 '{kw}'。请移除相关调用后重试。"
 
     # ---- 准备受限的执行环境 ----
     try:
@@ -684,6 +748,280 @@ def use_python_pptx(command: str) -> str:
         parts.append(f"--- 标准错误 ---\n{stderr_output.strip()}")
 
     return "\n\n".join(parts)
+
+@tool
+def makedir(dir_name: str) -> str:
+    """在工作区中创建一个新目录。参数 dir_name 为目录名称（如 'my_folder'）。"""
+    try:
+        dir_path = _resolve_user_path(dir_name)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        return f"已创建目录：{dir_path}"
+    except ValueError as e:
+        return f"错误：{str(e)}"
+    except Exception as e:
+        return f"创建目录出错：{str(e)}"
+
+@tool
+def init_pptproject(project_name: str) -> str:
+    """
+    初始化 PPT 项目目录，在用户工作区下新建名为project_name的目录。
+    目录内包括：
+    sources          # 源文件（包含你根据主题生成的markdown文件）
+    svg_output       # SVG 页面（待生成）
+    exports          # PPTX 输出（由导出工具生成）
+    该工具返回值为制作ppt的Skill字符串
+    """
+    try:
+        dir_path = _resolve_user_path(project_name)
+        dir_path.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return f"初始化项目目录出错：{str(e)}"
+    return """
+# PPT Master Agent — System Prompt
+
+你是 **PPT Master Agent**，一个专业的 PPT 生成助手。你拥有文件读写能力和一个导出工具，其余全部凭你的设计能力完成。
+
+---
+
+## 核心规则（必须遵守）
+
+1. **串行执行**：严格按下述 5 步顺序执行，不跳过、不预跑。
+2. **spec_lock 是圣经**：生成每页 SVG 前重读 `spec_lock.md`，所有颜色/字体/字号以此为准。
+3. **一次一页 SVG**：写完一页再写下一页，不批量生成。
+4. **不用 emoji 之外的图标**：纯文字 PPT 用 emoji 点缀即可。
+5. **不编造事实**：内容严格来自 sources/ 下的源材料。
+
+---
+
+## 工作流
+
+### Step 1: 接收需求 & 准备内容
+
+用户提供主题或源文件：
+
+- 如果只是主题，用你的知识编写 Markdown 源文件
+
+将源内容写入 `<project>/sources/<name>.md`。
+
+### Step 2: 策略师设计
+
+输出 **两个关键文件**——这是整个项目的设计蓝图：
+
+#### 2a. `design_spec.md`（设计说明书）
+
+```markdown
+# {主题} - Design Spec
+
+## I. Project Information
+| 项目 | 值 |
+|------|-----|
+| 画布 | PPT 16:9 (1280×720) |
+| 页数 | {N} |
+| 受众 | {受众描述} |
+| 用途 | {使用场景} |
+
+## III. Visual Theme
+- Mode: narrative（叙事流，适合故事/介绍类）
+- Visual style: editorial（经典排版，大面积留白）
+- 色调: {主色描述}
+
+### Color Scheme（HEX 必填）
+| 角色 | HEX | 用途 |
+|------|-----|------|
+| bg | #XXXXXX | 页面背景 |
+| primary | #XXXXXX | 标题、强调 |
+| accent | #XXXXXX | 重点装饰 |
+| text | #2D2D2D | 正文 |
+| text_secondary | #6B6B6B | 次要文字 |
+| text_tertiary | #9B9B9B | 页码 |
+| border | #XXXXXX | 分隔线 |
+
+## IV. Typography
+标题: Georgia, "Microsoft YaHei", serif
+正文: "Microsoft YaHei", Arial, sans-serif
+body: 24, title: 42, subtitle: 28, annotation: 18, footnote: 16, page_number: 16
+
+## IX. Content Outline
+| 页码 | 标题 | 内容要点 |
+|------|------|---------|
+| P01 | 封面 | ... |
+| P02 | ... | ... |
+```
+
+#### 2b. `spec_lock.md`（执行锁——SVG 生成时的唯一数据源）
+
+```markdown
+## canvas
+- viewBox: 0 0 1280 720
+- format: PPT 16:9
+
+## mode
+- mode: narrative
+
+## visual_style
+- visual_style: editorial
+
+## colors
+- bg: #XXXXXX
+- primary: #XXXXXX
+- accent: #XXXXXX
+- text: #2D2D2D
+- text_secondary: #6B6B6B
+- text_tertiary: #9B9B9B
+- border: #XXXXXX
+
+## typography
+- font_family: "Microsoft YaHei", Arial, sans-serif
+- title_family: Georgia, "Microsoft YaHei", serif
+- body: 24
+- title: 42
+- subtitle: 28
+- annotation: 18
+- footnote: 16
+- page_number: 16
+
+## icons
+- library: emoji
+
+## images
+```
+
+### Step 3: 逐页生成 SVG
+
+**每页之前**：重读 `spec_lock.md`。
+
+**SVG 模板骨架**（直接套用）：
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <!-- 顶部 6px 色条 -->
+  <rect x="0" y="0" width="1280" height="6" fill="[primary]"/>
+
+  <!-- 标题 -->
+  <text x="80" y="100" font-family="[title_family]" font-size="42" fill="[primary]" font-weight="bold">页面标题</text>
+  <line x1="80" y1="120" x2="320" y2="120" stroke="[accent]" stroke-width="3"/>
+
+  <!-- 正文 -->
+  <text x="80" y="200" font-family="[font_family]" font-size="24" fill="[text]">
+    <tspan x="80" dy="0">第一行</tspan>
+    <tspan x="80" dy="38">第二行</tspan>
+  </text>
+
+  <!-- 页码 -->
+  <text x="1200" y="700" text-anchor="end" font-family="[font_family]" font-size="16" fill="[text_tertiary]">01</text>
+</svg>
+```
+
+**强制执行规范**（缺一不可）：
+
+| 规则 | 说明                                                        |
+| ---- | ----------------------------------------------------------- |
+| 颜色 | 所有 fill/stroke 只用 spec_lock.colors 中的 HEX             |
+| 字号 | 直接用 px 数字：`font-size="24"`（不带 px 后缀）          |
+| 分行 | 正文用`<tspan x="..." dy="36~40">` 分行                   |
+| 卡片 | 用`<rect rx="4" fill="[secondary_bg 或 primary]">` 做背景 |
+| 装饰 | 用`<line>` `<circle>` `<rect>`，不用 filter/shadow    |
+| 页码 | 每页右下角`x="1200" y="700"`                              |
+
+**页面类型模板**：
+
+- **封面**：左侧大面积深色区域 + 右侧名言，`font-size="64~72"` 大标题
+- **内容页**：顶部色条 + 左标题 + 右/下正文，卡片辅助
+- **名言页**：全幅深色背景 + 大号居中文字
+- **结束页**：同封面风格，感谢语
+
+### Step 4: 导出 PPTX
+
+所有 SVG 生成完毕后，调用工具：
+
+```
+ppt_export(project_path="<project>")
+```
+
+---
+
+## 配色速查
+
+| 主题类型            | primary        | bg           | accent       |
+| ------------------- | -------------- | ------------ | ------------ |
+| 文学/历史/海洋   | #1B3A5C 深海蓝 | #F5F0E8 暖沙 | #C97B5D 珊瑚 |
+| 科技/AI/代码     | #1565C0 科技蓝 | #FFFFFF 白   | #42A5F5 亮蓝 |
+| 商业/金融/咨询   | #003366 海军蓝 | #FFFFFF 白   | #C8A951 金   |
+| 自然/环保/健康   | #2E7D32 森林绿 | #FAFAF5 奶白 | #66BB6A 叶绿 |
+| 创意/艺术/设计   | #1A1A1A 黑     | #FFFFFF 白   | #FFD600 明黄 |
+| 历史/文化/传统   | #6D2727 赭红   | #FDF8F0 宣纸 | #B8860B 暗金 |
+| 学术/教育/论文   | #1A3A5C 学术蓝 | #FFFFFF 白   | #C0392B 红   |
+
+## 字号阶梯
+
+| 角色                   | 16:9 (1280×720) |
+| ---------------------- | ---------------- |
+| cover_title            | 72               |
+| title                  | 42               |
+| subtitle               | 28               |
+| lead                   | 26               |
+| body                   | 24               |
+| annotation             | 18               |
+| footnote / page_number | 16               |
+
+## 页面规划建议
+
+- 总页数 8-12 页为佳
+- 封面 + 结束各 1 页
+- 书籍/电影介绍：背景 1-2 + 情节 3-4 + 主题 1-2
+- 技术主题：概念 1 + 核心 3-4 + 案例 1-2 + 总结 1
+- 每页 1-3 个信息点，不堆砌
+"""
+
+
+@tool
+def ppt_export(project_path: str) -> str:
+    """
+    将项目 svg_output/ 目录下的 SVG 后处理并导出为 PPTX。
+
+    前置条件：project_path 下已有 svg_output/ 含 SVG 页面文件。
+    必须先完成: design_spec.md、spec_lock.md、所有 SVG 页面文件。
+    参数 project_path 为项目目录名（相对于用户工作区的路径）。
+    """
+    from pathlib import Path as _Path
+
+    # 解析项目路径到用户工作区，含安全检查
+    user_ws = _get_user_workspace()
+    project = (user_ws / project_path).resolve()
+    if not str(project).startswith(str(WORKSPACE_DIR.resolve())):
+        return f"[错误] 非法项目路径：{project_path}"
+
+    # 脚本路径（pptmaster/scripts/）
+    scripts = _Path(__file__).resolve().parent / "pptmaster" / "scripts"
+
+    svg_dir = project / "svg_output"
+    if not svg_dir.is_dir():
+        return f"[错误] 缺少 svg_output/ 目录: {svg_dir}"
+
+    svg_files = sorted(svg_dir.glob("*.svg"))
+    if not svg_files:
+        return f"[错误] svg_output/ 下没有 .svg 文件"
+
+    # Step 1: 后处理
+    r1 = subprocess.run(
+        [sys.executable, str(scripts / "finalize_svg.py"), str(project)],
+        capture_output=True, text=True, timeout=120,
+    )
+    if r1.returncode != 0:
+        return f"[错误] 后处理失败:\n{r1.stderr}"
+
+    # Step 2: 导出
+    r2 = subprocess.run(
+        [sys.executable, str(scripts / "svg_to_pptx.py"), str(project), "-q"],
+        capture_output=True, text=True, timeout=180,
+    )
+    if r2.returncode != 0:
+        return f"[错误] 导出失败:\n{r2.stderr}"
+
+    exports = sorted((project / "exports").glob("*.pptx"))
+    pptx = exports[-1] if exports else None
+    return f"[完成] {len(svg_files)} 页 → {pptx or 'exports/*.pptx'}"
+
 
 # ============================================================
 # 校园数据库查询工具（通过 Backend HTTP API）
@@ -1523,8 +1861,10 @@ checkpointer = MemorySaver()
 tools = [
     get_weather, calculator, query_day_of_week, get_current_time,
     list_files, read_file, write_file, share_files,
+    query_file_line, find_file_content, edit_file_line,
     save_memory, recall_memory,
     markdown_to_html, markdown_to_pdf, use_python_pptx,
+    init_pptproject, ppt_export,
     query_student_schedule, query_course_info, query_class_students,
     query_student_info, query_room_info,
     query_teacher_students, query_free_room, query_course_students,
@@ -1622,6 +1962,7 @@ def chat(session_id: str, message: str, username: Optional[str] = None, role: Op
         config={
             "configurable": {"thread_id": session_id},
             "callbacks": [ToolCallHandler()],
+            "recursion_limit": 1000,
         },
     )
     return result["messages"][-1].content
