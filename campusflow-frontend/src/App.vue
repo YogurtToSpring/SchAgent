@@ -189,7 +189,8 @@ import {
 } from './api/platform'
 import { listAgentFiles } from './api/files'
 
-const SESSION_STORAGE_KEY = 'campusflow.currentUser'
+const SESSION_STORAGE_KEY = 'campusflow.currentUser.v2'
+const LEGACY_SESSION_STORAGE_KEYS = ['campusflow.currentUser']
 
 const currentUser = ref(null)
 const activeView = ref('dashboard')
@@ -225,6 +226,7 @@ const visibleFiles = computed(() => {
 })
 
 onMounted(() => {
+  clearLegacyLoginSessions()
   restoreLoginSession()
 })
 
@@ -521,7 +523,7 @@ function hydrateUser(user, snapshot) {
   if (user.role === 'teacher') {
     const teacher = user.authRole === 'admin'
       ? null
-      : snapshot.teachers.find(item => item.teacherNo === user.teacherNo || item.username === user.username) || snapshot.teachers[0]
+      : snapshot.teachers.find(item => item.teacherNo === user.teacherNo || item.username === user.username)
     const teacherNo = teacher?.teacherNo || user.teacherNo || user.username || ''
     const teacherName = teacher?.name || user.name
     const classIds = snapshot.classes
@@ -543,9 +545,7 @@ function hydrateUser(user, snapshot) {
     }
   }
 
-  const student =
-    snapshot.students.find(item => item.studentNo === user.studentNo) ||
-    snapshot.students[0]
+  const student = snapshot.students.find(item => item.studentNo === user.studentNo)
 
   if (!student) return user
 
@@ -614,8 +614,9 @@ async function restoreLoginSession() {
     saveLoginSession(currentUser.value)
     await Promise.allSettled([refreshTodos(), refreshGrades()])
   } catch (error) {
-    currentUser.value = savedUser
-    platformError.value = '已恢复本地登录状态，平台数据使用本地缓存。'
+    localStorage.removeItem(SESSION_STORAGE_KEY)
+    currentUser.value = null
+    platformError.value = '登录状态已过期，请重新登录。'
   } finally {
     refreshWeather()
     refreshFiles()
@@ -637,6 +638,14 @@ function readLoginSession() {
 function saveLoginSession(user) {
   if (!user) return
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user))
+}
+
+function clearLegacyLoginSessions() {
+  try {
+    LEGACY_SESSION_STORAGE_KEYS.forEach(key => localStorage.removeItem(key))
+  } catch {
+    // localStorage 不可用时，跳过旧会话清理。
+  }
 }
 
 function canAccessView(view) {

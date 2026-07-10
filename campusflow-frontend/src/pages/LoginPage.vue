@@ -60,7 +60,6 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { fallbackUsers } from '../data/platformData'
 import { loginPlatformUser, registerPlatformUser } from '../api/platform'
 
 const emit = defineEmits(['login'])
@@ -68,8 +67,8 @@ const emit = defineEmits(['login'])
 const mode = ref('login')
 const role = ref('teacher')
 const name = ref('')
-const username = ref('123')
-const password = ref('123456')
+const username = ref('')
+const password = ref('')
 const className = ref('弘毅班')
 const error = ref('')
 const loading = ref(false)
@@ -81,8 +80,6 @@ function switchMode(nextMode) {
   error.value = ''
   if (nextMode === 'register') {
     password.value = ''
-  } else {
-    password.value = '123456'
   }
 }
 
@@ -121,15 +118,6 @@ async function submit() {
   } catch (err) {
     if (mode.value === 'register') {
       error.value = '注册失败，请确认账号没有被占用，或后端服务已启动。'
-      return
-    }
-
-    const fallbackUser = fallbackUsers.find(
-      item => item.username === username.value.trim() && item.password === password.value
-    )
-
-    if (fallbackUser) {
-      emit('login', { ...fallbackUser })
       return
     }
 

@@ -1,32 +1,3 @@
-export const fallbackUsers = [
-  {
-    id: 'u-teacher-001',
-    username: '123',
-    password: '123456',
-    role: 'teacher',
-    name: '林老师',
-    title: '软件工程系辅导员',
-    classIds: ['class-se-1', 'class-ai-1']
-  },
-  {
-    id: 'u-student-001',
-    username: 'student',
-    password: '123456',
-    role: 'student',
-    name: '赵同学',
-    studentNo: '2024001',
-    classId: 'class-se-1'
-  },
-  {
-    id: 'u-admin-001',
-    username: '123456',
-    password: '123456',
-    role: 'admin',
-    name: '系统管理员',
-    classIds: ['class-se-1', 'class-ai-1']
-  }
-]
-
 export const initialClasses = [
   {
     id: 'class-se-1',
@@ -47,7 +18,7 @@ export const initialClasses = [
 export const initialStudents = [
   {
     id: 'stu-001',
-    userId: 'u-student-001',
+    userId: 'student-2024001',
     name: '赵同学',
     studentNo: '2024001',
     classId: 'class-se-1'
