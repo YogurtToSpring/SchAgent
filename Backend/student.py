@@ -272,33 +272,6 @@ def change_password(student_num: str, password_data: PasswordChange):
     
     return {"message": "Password modified successfully"}
 
-@router.post("/students/{stu_num}/modify1")
-def modify1(new_info: StudentRegister):
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    
-    # student = conn.execute("SELECT * FROM students WHERE StuNum = ?", (new_info.StuNum,)).fetchone()
-
-    conn.execute(
-        "UPDATE students SET Name = ? WHERE StuNum = ?",
-        (new_info.Name, new_info.StuNum)
-    )
-    conn.commit()
-    conn.close()
-@router.post("/students/{stu_num}/modify2")
-def modify2(new_info: StudentRegister):
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    
-    # student = conn.execute("SELECT * FROM students WHERE StuNum = ?", (new_info.StuNum,)).fetchone()
-
-    conn.execute(
-        "UPDATE students SET StuNum = ? WHERE Name = ?",
-        (new_info.StuNum, new_info.Name)
-    )
-    conn.commit()
-    conn.close()
-
 # ============================================================
 # 计算学生GPA接口
 # 调用方式: GET /api/students/{stu_num}/gpa?semester=2024-2025-1
