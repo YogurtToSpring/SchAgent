@@ -4,5 +4,8 @@ build/
 __pycache__/
 workspace/
 .vscode/
-.env
-.db
+*.env
+*.db
+*.xlsx
+*.csv
+*.zip
