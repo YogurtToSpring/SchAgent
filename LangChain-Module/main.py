@@ -20,6 +20,7 @@ import contextvars
 import re
 import json
 import math
+import shutil
 import requests
 from dotenv import load_dotenv
 from pathlib import Path
@@ -1026,7 +1027,20 @@ def ppt_export(project_path: str) -> str:
 
     exports = sorted((project / "exports").glob("*.pptx"))
     pptx = exports[-1] if exports else None
-    return f"[完成] {len(svg_files)} 页 → {pptx or 'exports/*.pptx'}"
+
+    if pptx is None:
+        return f"[错误] 导出完成但在 exports/ 下未找到 .pptx 文件"
+
+    # 移动到用户工作区根目录，确保 share_files 能直接找到
+    dest = user_ws / pptx.name
+    try:
+        if dest.exists():
+            dest.unlink()
+        shutil.move(str(pptx), str(dest))
+    except Exception as e:
+        return f"[错误] 移动 PPTX 到工作区根目录失败: {e}"
+
+    return f"[完成] {len(svg_files)} 页 → {pptx.name}"
 
 
 # ============================================================
