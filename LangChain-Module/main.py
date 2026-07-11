@@ -2264,7 +2264,10 @@ async def chat_stream(session_id: str, message: str, username: Optional[str] = N
 
         async for event in agent.astream_events(
             {"messages": [HumanMessage(content=message)]},
-            config={"configurable": {"thread_id": session_id}},
+            config={
+                "configurable": {"thread_id": session_id},
+                "recursion_limit": 10000,
+            },
             version="v2",
         ):
             kind = event["event"]
