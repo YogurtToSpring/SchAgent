@@ -74,7 +74,7 @@
         <label>
           <span>
             <strong>默认收起工具轨迹</strong>
-            <small>智能助手页面保持主对话优先</small>
+            <small>SchAgent Agent 页面保持主对话优先</small>
           </span>
           <input v-model="settings.compactTrace" type="checkbox" />
         </label>

@@ -3,7 +3,7 @@
     <section class="login-hero">
       <div class="brand-mark large">CF</div>
       <h1>CampusFlow 校园智能服务平台</h1>
-      <p>统一管理课程、待办、成绩、图书馆、论坛、文件和智能助手。</p>
+      <p>统一管理课程、待办、成绩、图书馆、论坛、文件和 SchAgent Agent。</p>
     </section>
 
     <section class="login-panel" aria-label="登录面板">

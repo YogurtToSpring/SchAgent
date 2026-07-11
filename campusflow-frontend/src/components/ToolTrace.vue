@@ -1,5 +1,5 @@
 <template>
-  <aside class="trace-panel" aria-label="智能体执行过程">
+  <aside class="trace-panel" aria-label="SchAgent Agent 执行过程">
     <div class="panel-title trace-title">
       <span>执行轨迹</span>
       <span class="trace-status" :class="status">{{ statusText }}</span>
