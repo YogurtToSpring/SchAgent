@@ -2216,7 +2216,7 @@ def chat(session_id: str, message: str, username: Optional[str] = None, role: Op
         config={
             "configurable": {"thread_id": session_id},
             "callbacks": [ToolCallHandler()],
-            "recursion_limit": 1000,
+            "recursion_limit": 10000,
         },
     )
     return result["messages"][-1].content
