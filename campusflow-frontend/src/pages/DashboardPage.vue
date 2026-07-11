@@ -231,7 +231,7 @@ const workbenchActions = computed(() => {
     return [
       { view: 'classes', label: '班级与课程' },
       { view: 'admin', label: '管理后台' },
-      { view: 'assistant', label: '问助手' }
+      { view: 'assistant', label: '使用 SchAgent' }
     ]
   }
   if (props.currentUser.role === 'teacher') {
@@ -239,7 +239,7 @@ const workbenchActions = computed(() => {
       { view: 'classes', label: '班级与课程' },
       { view: 'schedule', label: '教学课表' },
       { view: 'forum', label: '论坛' },
-      { view: 'assistant', label: '问助手' }
+      { view: 'assistant', label: '使用 SchAgent' }
     ]
   }
   return [
@@ -247,7 +247,7 @@ const workbenchActions = computed(() => {
     { view: 'course-selection', label: '学生选课' },
     { view: 'library', label: '图书馆' },
     { view: 'forum', label: '论坛' },
-    { view: 'assistant', label: '问助手' }
+    { view: 'assistant', label: '使用 SchAgent' }
   ]
 })
 

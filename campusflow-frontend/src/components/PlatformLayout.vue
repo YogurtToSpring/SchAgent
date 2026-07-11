@@ -93,7 +93,7 @@ const navItems = computed(() => {
     { key: 'todos', label: '待办事项', icon: CheckSquare },
     { key: 'notifications', label: '通知消息', icon: Bell },
     { key: 'files', label: '文件中心', icon: Files },
-    { key: 'assistant', label: '智能助手', icon: Bot }
+    { key: 'assistant', label: 'SchAgent', icon: Bot }
   ]
 
   if (props.currentUser.role === 'student') {
@@ -151,7 +151,7 @@ const currentTitle = computed(() => {
 
 const topbarSubtitle = computed(() => {
   if (props.activeView === 'dashboard') return '今日课程、待办和消息'
-  if (props.activeView === 'assistant') return '基于当前身份和页面数据执行任务'
+  if (props.activeView === 'assistant') return 'SchAgent 基于当前身份和页面数据执行任务'
   return `${roleText.value}视角 · ${props.currentUser.name}`
 })
 </script>

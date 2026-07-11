@@ -1,9 +1,9 @@
 <template>
   <section class="assistant-page">
-    <aside class="assistant-sessions" aria-label="助手会话">
+    <aside class="assistant-sessions" aria-label="SchAgent 会话">
       <header class="assistant-session-header">
         <div>
-          <span class="assistant-eyebrow">智能助手</span>
+          <span class="assistant-eyebrow">SchAgent</span>
           <strong>会话</strong>
         </div>
         <button class="assistant-new-button" type="button" :disabled="loading" @click="startNewSession">
@@ -40,10 +40,10 @@
       </footer>
     </aside>
 
-    <section class="assistant-conversation" aria-label="智能助手对话">
+    <section class="assistant-conversation" aria-label="SchAgent Agent 对话">
       <header class="assistant-conversation-header">
         <div class="conversation-title-group">
-          <span class="assistant-eyebrow">CampusFlow Assistant</span>
+          <span class="assistant-eyebrow">SchAgent Agent</span>
           <label class="conversation-title-field">
             <span>会话名称</span>
             <input
@@ -175,7 +175,8 @@ const sessionStorageIdentity = computed(() => {
   ].join(':')
 })
 
-const storageKey = computed(() => `campusflow.assistant.sessions.${sessionStorageIdentity.value}`)
+const storageKey = computed(() => `schagent.agent.sessions.${sessionStorageIdentity.value}`)
+const legacyStorageKey = computed(() => `campusflow.assistant.sessions.${sessionStorageIdentity.value}`)
 
 const activeSession = computed(() => {
   return sessions.value.find(item => item.localId === activeLocalSessionId.value) || null
@@ -215,7 +216,7 @@ const traceSummary = computed(() => {
 const currentConversationSubtitle = computed(() => {
   const parts = [roleLabel(props.currentUser.role), props.currentUser.name]
   if (sessionId.value) {
-    parts.push(`智能体会话 ${shortId(sessionId.value)}`)
+    parts.push(`Agent 会话 ${shortId(sessionId.value)}`)
   } else {
     parts.push('本地新会话')
   }
@@ -258,11 +259,11 @@ async function handleSend(text) {
     reasoning: '',
     artifacts: [],
     isStreaming: true,
-    streamingStatus: '正在连接智能体...'
+    streamingStatus: '正在连接 Agent...'
   }))
   const assistantIndex = messages.value.length - 1
   loading.value = true
-  steps.value = ['正在连接智能体...']
+  steps.value = ['正在连接 Agent...']
   toolCalls.value = []
   saveCurrentSession()
 
@@ -564,7 +565,7 @@ function persistSessions() {
 
 function readStoredSessions() {
   try {
-    const raw = localStorage.getItem(storageKey.value)
+    const raw = localStorage.getItem(storageKey.value) || localStorage.getItem(legacyStorageKey.value)
     const parsed = JSON.parse(raw || '[]')
     return Array.isArray(parsed) ? parsed : []
   } catch {
@@ -574,7 +575,7 @@ function readStoredSessions() {
 
 function readActiveSessionId() {
   try {
-    return localStorage.getItem(`${storageKey.value}.active`)
+    return localStorage.getItem(`${storageKey.value}.active`) || localStorage.getItem(`${legacyStorageKey.value}.active`)
   } catch {
     return ''
   }
@@ -584,7 +585,7 @@ function createWelcomeMessage() {
   return createMessage(
     'assistant',
     'normal',
-    `你好，${props.currentUser.name}。我是 CampusFlow 平台助手，会基于你的${roleLabel(props.currentUser.role)}权限和平台数据回答问题。`
+    `你好，${props.currentUser.name}。我是 SchAgent Agent，会基于你的${roleLabel(props.currentUser.role)}权限和平台数据回答问题。`
   )
 }
 
@@ -651,7 +652,7 @@ function patchAssistantMessage(index, patch) {
 
 function appendStep(step) {
   if (!step || steps.value.includes(step)) return
-  if (steps.value.length === 1 && steps.value[0] === '正在连接智能体...') {
+  if (steps.value.length === 1 && steps.value[0] === '正在连接 Agent...') {
     steps.value = [step]
     return
   }
@@ -661,7 +662,7 @@ function appendStep(step) {
 function friendlyError(err) {
   if (err.code === 'ECONNABORTED') return '后端响应超时，请稍后重试。'
   if (!navigator.onLine) return '当前网络不可用，请恢复连接后重试。'
-  return '未能连接到智能体服务，请确认后端服务已启动。'
+  return '未能连接到 SchAgent 服务，请确认后端服务已启动。'
 }
 
 function roleLabel(role) {
@@ -726,7 +727,7 @@ function buildAgentPlatformContext() {
     ? props.courses.filter(item => item.classId === user.classId)
     : visibleCourses
   const contextLines = [
-    '【CampusFlow平台上下文】',
+    '【SchAgent Agent 上下文】',
     '说明：以下数据来自当前前端已加载的学校平台数据库，只用于回答用户问题。回答时不要复述本段说明。',
     `当前用户：${user.name}；角色：${roleLabel(user.role)}；学号：${user.studentNo || '无'}；教师编号：${user.teacherNo || '无'}；当前班级：${currentClass?.name || user.classId || '未分配'}`,
     `天气：${props.weather.weather || '未知'}；城市：${props.weather.city || '未知'}；温度：${props.weather.temperature || '未知'}；风力：${props.weather.wind || '未知'}。`
