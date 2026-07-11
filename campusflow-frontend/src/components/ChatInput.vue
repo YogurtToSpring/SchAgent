@@ -1,13 +1,15 @@
 <template>
   <form class="chat-input" @submit.prevent="submit">
-    <textarea
-      v-model="text"
-      :disabled="disabled"
-      rows="1"
-      placeholder="输入你的问题，例如：明天上午我有没有课？"
-      @keydown.enter.exact.prevent="submit"
-      @keydown.shift.enter.stop
-    ></textarea>
+    <label class="chat-input-field">
+      <span>消息内容</span>
+      <textarea
+        v-model="text"
+        :disabled="disabled"
+        rows="1"
+        @keydown.enter.exact.prevent="submit"
+        @keydown.shift.enter.stop
+      ></textarea>
+    </label>
     <button class="icon-button send-button" type="submit" :disabled="disabled || !text.trim()">
       <SendHorizontal :size="18" />
       发送

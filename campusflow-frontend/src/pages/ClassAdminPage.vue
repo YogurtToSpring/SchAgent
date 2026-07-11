@@ -26,19 +26,19 @@
         <form v-if="isAdmin" class="structured-form class-create-form" @submit.prevent="addClass">
           <label>
             班级号
-            <input v-model="newClass.classId" placeholder="例如 SE2024-1" />
+            <input v-model="newClass.classId" />
           </label>
           <label>
             班级名称
-            <input v-model="newClass.name" placeholder="例如 软件工程1班" />
+            <input v-model="newClass.name" />
           </label>
           <label>
             年级
-            <input v-model="newClass.grade" placeholder="例如 2024级" />
+            <input v-model="newClass.grade" />
           </label>
           <label>
             专业
-            <input v-model="newClass.major" placeholder="例如 软件工程" />
+            <input v-model="newClass.major" />
           </label>
           <label>
             容量
@@ -46,7 +46,7 @@
           </label>
           <label class="search-field">
             班主任
-            <input v-model="newClass.teacherQuery" placeholder="搜索教师姓名或工号" />
+            <input v-model="newClass.teacherQuery" />
             <div v-if="teacherSuggestions(newClass.teacherQuery).length" class="search-suggestions">
               <button
                 v-for="teacher in teacherSuggestions(newClass.teacherQuery)"
@@ -62,9 +62,9 @@
         </form>
 
         <div class="filter-bar">
-          <input v-model="classFilters.keyword" placeholder="搜索班级号、班级名、班主任" />
-          <input v-model="classFilters.grade" placeholder="按年级筛选" />
-          <input v-model="classFilters.major" placeholder="按专业筛选" />
+          <label class="filter-field"><span>班级搜索</span><input v-model="classFilters.keyword" /></label>
+          <label class="filter-field"><span>年级</span><input v-model="classFilters.grade" /></label>
+          <label class="filter-field"><span>专业</span><input v-model="classFilters.major" /></label>
         </div>
 
         <div class="data-table-wrap">
@@ -140,8 +140,8 @@
 
       <template v-else-if="activeModule === 'students' && isAdmin">
         <div class="filter-bar">
-          <input v-model="studentFilters.keyword" placeholder="搜索姓名、学号、当前班级" />
-          <input v-model="studentFilters.targetClass" placeholder="搜索目标班级号或班级名" />
+          <label class="filter-field"><span>学生搜索</span><input v-model="studentFilters.keyword" /></label>
+          <label class="filter-field"><span>目标班级</span><input v-model="studentFilters.targetClass" /></label>
         </div>
 
         <div class="data-table-wrap">
@@ -163,7 +163,6 @@
                   <div class="inline-search">
                     <input
                       :value="classQueries[student.id] ?? studentFilters.targetClass"
-                      placeholder="搜索班级后确认调整"
                       @input="classQueries[student.id] = $event.target.value"
                     />
                     <div v-if="studentClassSuggestions(student).length" class="search-suggestions">
@@ -196,15 +195,15 @@
         <form class="structured-form account-import-form" @submit.prevent="stageStudent">
           <label>
             姓名
-            <input v-model="studentDraft.name" placeholder="例如 张三" />
+            <input v-model="studentDraft.name" />
           </label>
           <label>
             学号
-            <input v-model="studentDraft.studentNo" placeholder="例如 2024001" />
+            <input v-model="studentDraft.studentNo" />
           </label>
           <label class="search-field">
             班级
-            <input v-model="studentDraft.classQuery" placeholder="搜索班级号或班级名" />
+            <input v-model="studentDraft.classQuery" />
             <div v-if="classSuggestions(studentDraft.classQuery).length" class="search-suggestions">
               <button
                 v-for="item in classSuggestions(studentDraft.classQuery)"
@@ -218,7 +217,7 @@
           </label>
           <label>
             初始密码
-            <input v-model="studentDraft.password" placeholder="默认 123456" />
+            <input v-model="studentDraft.password" />
           </label>
           <button class="primary-action compact" type="submit">加入待导入</button>
         </form>
@@ -262,15 +261,15 @@
         <form v-if="isAdmin" class="structured-form course-import-form" @submit.prevent="addCourse">
           <label>
             课程编号
-            <input v-model="newCourse.courseId" placeholder="例如 123456" />
+            <input v-model="newCourse.courseId" />
           </label>
           <label>
             课程名称
-            <input v-model="newCourse.courseName" placeholder="例如 数据库原理" />
+            <input v-model="newCourse.courseName" />
           </label>
           <label class="search-field">
             面向班级
-            <input v-model="newCourse.classQuery" placeholder="搜索班级号或班级名" />
+            <input v-model="newCourse.classQuery" />
             <div v-if="classSuggestions(newCourse.classQuery).length" class="search-suggestions">
               <button
                 v-for="item in classSuggestions(newCourse.classQuery)"
@@ -284,7 +283,7 @@
           </label>
           <label class="search-field">
             任课教师
-            <input v-model="newCourse.teacherQuery" placeholder="搜索教师姓名或工号" />
+            <input v-model="newCourse.teacherQuery" />
             <div v-if="teacherSuggestions(newCourse.teacherQuery).length" class="search-suggestions">
               <button
                 v-for="teacher in teacherSuggestions(newCourse.teacherQuery)"
@@ -298,25 +297,31 @@
           </label>
           <label>
             星期
-            <input v-model="newCourse.weekday" placeholder="例如 周一" />
+            <input v-model="newCourse.weekday" />
           </label>
           <label>
             开始时间
-            <input v-model="newCourse.startTime" placeholder="08:00" />
+            <input v-model="newCourse.startTime" />
           </label>
           <label>
             结束时间
-            <input v-model="newCourse.endTime" placeholder="09:40" />
+            <input v-model="newCourse.endTime" />
           </label>
           <label class="search-field">
             地点
-            <input v-model="newCourse.roomQuery" placeholder="搜索教室，如 3-3-301" />
-            <div v-if="roomSuggestions(newCourse.roomQuery).length" class="search-suggestions">
+            <input
+              v-model="newCourse.roomQuery"
+              @blur="scheduleCloseRoomSuggestions"
+              @focus="roomSuggestionsOpen = true"
+              @input="roomSuggestionsOpen = true"
+              @keydown.esc="roomSuggestionsOpen = false"
+            />
+            <div v-if="roomSuggestionsOpen && roomSuggestions(newCourse.roomQuery).length" class="search-suggestions">
               <button
                 v-for="room in roomSuggestions(newCourse.roomQuery)"
                 :key="room.roomFull"
                 type="button"
-                @click="newCourse.roomQuery = room.roomFull"
+                @mousedown.prevent="selectCourseRoom(room)"
               >
                 {{ room.label }}
               </button>
@@ -324,26 +329,26 @@
           </label>
           <label>
             起始周
-            <input v-model="newCourse.weekStart" placeholder="1" />
+            <input v-model="newCourse.weekStart" />
           </label>
           <label>
             结束周
-            <input v-model="newCourse.weekEnd" placeholder="16" />
+            <input v-model="newCourse.weekEnd" />
           </label>
           <label>
             学期
-            <input v-model="newCourse.semester" placeholder="2025-2026-2" />
+            <input v-model="newCourse.semester" />
           </label>
           <label>
             学分
-            <input v-model="newCourse.credit" placeholder="2" type="number" min="0" step="0.5" />
+            <input v-model="newCourse.credit" type="number" min="0" step="0.5" />
           </label>
           <button class="primary-action compact" type="submit">确认添加课程</button>
         </form>
 
         <div class="filter-bar">
-          <input v-model="courseFilters.keyword" placeholder="搜索课程号、课程名、班级、教师" />
-          <input v-model="courseFilters.semester" placeholder="按学期筛选" />
+          <label class="filter-field"><span>课程搜索</span><input v-model="courseFilters.keyword" /></label>
+          <label class="filter-field"><span>学期</span><input v-model="courseFilters.semester" /></label>
         </div>
 
         <div class="course-card-list">
@@ -354,9 +359,22 @@
             :class="{ active: selectedCourseKey === course.id }"
             @click="selectedCourseKey = course.id"
           >
-            <span>{{ course.backendCourseId || course.courseId || course.id }}</span>
-            <strong>{{ course.courseName }}</strong>
-            <p>{{ className(course.classId) }} · {{ course.teacher }} · {{ course.semester || '未设置学期' }}</p>
+            <div class="course-card-head">
+              <span>{{ course.backendCourseId || course.courseId || course.id }}</span>
+              <strong>{{ course.courseName }}</strong>
+            </div>
+            <div class="course-card-meta">
+              <span>{{ className(course.classId) }}</span>
+              <span>{{ course.teacher || '待定教师' }}</span>
+            </div>
+            <div class="course-card-detail">
+              <span>{{ course.weekday || '未排课' }} {{ course.startTime || '--:--' }}-{{ course.endTime || '--:--' }}</span>
+              <span>{{ course.location || course.roomId || '未设置地点' }}</span>
+            </div>
+            <div class="course-card-foot">
+              <span>{{ course.semester || '未设置学期' }}</span>
+              <span>{{ courseStudents(course).length }} 名学生</span>
+            </div>
           </article>
         </div>
 
@@ -413,11 +431,11 @@
         <form class="structured-form notice-compose-form" @submit.prevent="sendNotice">
           <label>
             标题
-            <input v-model="noticeDraft.title" placeholder="通知标题" />
+            <input v-model="noticeDraft.title" />
           </label>
           <label>
             内容
-            <input v-model="noticeDraft.content" placeholder="通知内容" />
+            <input v-model="noticeDraft.content" />
           </label>
           <button class="primary-action compact" type="submit">确认发送</button>
         </form>
@@ -480,6 +498,7 @@ const selectedClassId = ref('')
 const selectedCourseKey = ref('')
 const pendingStudents = ref([])
 const noticeTarget = ref(null)
+const roomSuggestionsOpen = ref(false)
 const classQueries = reactive({})
 const storedGradeDrafts = reactive(loadStoredGradeDrafts())
 const gradeEdits = reactive({})
@@ -761,7 +780,8 @@ function confirmSaveCourseGrade(course, student) {
   emit('save-grade', {
     courseId: course.backendCourseId || course.courseId || course.id,
     studentNo: student.studentNo,
-    score: Number(edit.final || 0),
+    regularScore: Number(edit.usual || 0),
+    finalExamScore: Number(edit.final || 0),
     semester: course.semester || '2025-2026-2',
     examType: '期末考试',
     remark: edit.remark || ''
@@ -808,8 +828,8 @@ function gradeEdit(course, student) {
     const grade = findGrade(course, student)
     const stored = storedGradeDrafts[key] || {}
     gradeEdits[key] = {
-      usual: stored.usual ?? grade?.usual ?? grade?.usualScore ?? '',
-      final: grade?.final ?? grade?.finalScore ?? grade?.score ?? stored.final ?? '',
+      usual: grade?.regularScore ?? grade?.usual ?? grade?.usualScore ?? stored.usual ?? grade?.score ?? '',
+      final: grade?.finalExamScore ?? grade?.final ?? stored.final ?? grade?.score ?? '',
       remark: grade?.remark ?? stored.remark ?? ''
     }
   }
@@ -819,7 +839,7 @@ function gradeEdit(course, student) {
 function gradePointPreview(course, student) {
   const edit = gradeEdit(course, student)
   if (edit.final !== '' && edit.final != null) {
-    return scoreToGradePoint(Number(edit.final || 0)).toFixed(2)
+    return scoreToGradePoint(weightedScore(edit.usual, edit.final)).toFixed(2)
   }
   const grade = findGrade(course, student)
   if (grade?.gradePoint != null) return Number(grade.gradePoint).toFixed(2)
@@ -866,6 +886,10 @@ function classStudents(classId) {
 }
 
 function courseStudents(course) {
+  if (Array.isArray(course.studentNos)) {
+    const enrolled = new Set(course.studentNos)
+    return props.students.filter(student => enrolled.has(student.studentNo))
+  }
   return classStudents(course.classId)
 }
 
@@ -918,6 +942,17 @@ function roomSuggestions(query) {
     .slice(0, 5)
 }
 
+function selectCourseRoom(room) {
+  newCourse.roomQuery = room.roomFull
+  roomSuggestionsOpen.value = false
+}
+
+function scheduleCloseRoomSuggestions() {
+  window.setTimeout(() => {
+    roomSuggestionsOpen.value = false
+  }, 120)
+}
+
 function resolveTeacherNo(value) {
   const text = String(value || '').trim()
   const matched = props.teachers.find(teacher => teacher.teacherNo === text || formatTeacher(teacher) === text || teacher.name === text)
@@ -963,6 +998,14 @@ function scoreToGradePoint(score) {
   if (score >= 64) return 1.5
   if (score >= 60) return 1.0
   return 0
+}
+
+function weightedScore(regularScore, finalExamScore) {
+  if (regularScore === '' || regularScore == null) return Number(finalExamScore || 0)
+  if (finalExamScore === '' || finalExamScore == null) return Number(regularScore || 0)
+  const regular = Number(regularScore || 0)
+  const final = Number(finalExamScore || 0)
+  return Math.round((regular * 0.4 + final * 0.6) * 10) / 10
 }
 
 function nextCourseId() {

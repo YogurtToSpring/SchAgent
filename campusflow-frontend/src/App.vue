@@ -70,6 +70,13 @@
       :courses="courses"
     />
 
+    <CourseSelectionPage
+      v-if="currentUser.role === 'student'"
+      v-show="activeView === 'course-selection'"
+      :current-user="currentUser"
+      @enrollment-changed="handleEnrollmentChanged"
+    />
+
     <GradesPage
       v-show="activeView === 'grades'"
       :current-user="currentUser"
@@ -83,11 +90,12 @@
     />
 
     <LibraryPage
+      v-if="currentUser.role === 'student'"
       v-show="activeView === 'library'"
-      :seats="librarySeats"
-      :reservations="reservations"
-      @reserve-seat="reserveSeat"
+      :current-user="currentUser"
+      @reservations-updated="syncReservations"
       @add-todo="addTodo"
+      @notification-created="addPersonalNotification"
     />
 
     <ForumPage
@@ -144,6 +152,7 @@ import { computed, onMounted, ref } from 'vue'
 import AdminCenterPage from './pages/AdminCenterPage.vue'
 import ChatPage from './pages/ChatPage.vue'
 import ClassAdminPage from './pages/ClassAdminPage.vue'
+import CourseSelectionPage from './pages/CourseSelectionPage.vue'
 import DashboardPage from './pages/DashboardPage.vue'
 import FileCenterPage from './pages/FileCenterPage.vue'
 import ForumPage from './pages/ForumPage.vue'
@@ -166,9 +175,7 @@ import {
   initialFiles,
   initialForumPosts,
   initialGrades,
-  initialLibrarySeats,
   initialNotifications,
-  initialReservations,
   initialSystemLogs,
   initialTodos
 } from './data/campusModules'
@@ -203,8 +210,7 @@ const weather = ref(cloneData(weatherSnapshot))
 const todos = ref(cloneData(initialTodos))
 const grades = ref(cloneData(initialGrades))
 const gradeSummary = ref(null)
-const librarySeats = ref(cloneData(initialLibrarySeats))
-const reservations = ref(cloneData(initialReservations))
+const reservations = ref([])
 const forumPosts = ref(cloneData(initialForumPosts))
 const notifications = ref(cloneData(initialNotifications))
 const files = ref(cloneData(initialFiles))
@@ -305,14 +311,17 @@ async function deleteTodo(todoId) {
   }
 }
 
-function reserveSeat(payload) {
-  reservations.value.unshift({
-    id: `res-${Date.now()}`,
-    ...payload
-  })
-  const seatNo = payload.target.split(' ').pop()
-  const seat = librarySeats.value.find(item => item.seatNo === seatNo)
-  if (seat) seat.status = 'reserved'
+function syncReservations(items) {
+  reservations.value = Array.isArray(items) ? items : []
+}
+
+async function handleEnrollmentChanged() {
+  try {
+    await refreshPlatformData()
+    platformError.value = ''
+  } catch (error) {
+    platformError.value = '选课已提交，但课表同步失败，请稍后刷新。'
+  }
 }
 
 function addPost(payload) {
@@ -350,6 +359,20 @@ function openNotice(notice) {
   const target = notifications.value.find(item => item.id === notice.id)
   if (target) target.status = 'read'
   if (notice.link && canAccessView(notice.link)) activeView.value = notice.link
+}
+
+function addPersonalNotification(payload) {
+  notifications.value.unshift({
+    id: `notice-${Date.now()}`,
+    type: payload.type || '系统通知',
+    title: payload.title,
+    content: payload.content || '',
+    time: '刚刚',
+    status: 'unread',
+    link: payload.link || 'notifications',
+    ownerId: backendUserId(currentUser.value),
+    audienceRoles: [currentUser.value?.role].filter(Boolean)
+  })
 }
 
 function sendNotification(payload) {
@@ -653,7 +676,7 @@ function canAccessView(view) {
   const role = currentUser.value?.role
   const common = ['dashboard', 'profile', 'todos', 'notifications', 'files', 'assistant']
   const roleViews = {
-    student: ['schedule', 'grades', 'library', 'forum'],
+    student: ['schedule', 'course-selection', 'grades', 'library', 'forum'],
     teacher: ['classes', 'schedule', 'forum'],
     admin: ['classes', 'schedule', 'forum', 'admin']
   }
