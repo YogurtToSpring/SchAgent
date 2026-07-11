@@ -38,11 +38,11 @@
         </label>
         <label>
           联系邮箱
-          <input v-model="settings.email" placeholder="name@campus.edu.cn" />
+          <input v-model="settings.email" />
         </label>
         <label>
           联系电话
-          <input v-model="settings.phone" placeholder="请输入联系电话" />
+          <input v-model="settings.phone" />
         </label>
         <button class="primary-action compact" type="button">保存资料</button>
       </form>
@@ -50,11 +50,11 @@
       <form v-else-if="activeTab === 'account'" class="settings-form" @submit.prevent>
         <label>
           当前密码
-          <input type="password" placeholder="请输入当前密码" />
+          <input type="password" />
         </label>
         <label>
           新密码
-          <input type="password" placeholder="请输入新密码" />
+          <input type="password" />
         </label>
         <label>
           登录设备
@@ -74,7 +74,7 @@
         <label>
           <span>
             <strong>默认收起工具轨迹</strong>
-            <small>智能助手页面保持主对话优先</small>
+            <small>SchAgent Agent 页面保持主对话优先</small>
           </span>
           <input v-model="settings.compactTrace" type="checkbox" />
         </label>

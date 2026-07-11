@@ -121,6 +121,16 @@ def drop_course(req: DeleteEnrollRequest):
         conn_course.close()
         raise HTTPException(status_code=404, detail=f"Course {req.course_id} Not Found!")
     
+    cont = sqlite3.connect("grade.db")
+    cont.row_factory = sqlite3.Row
+    row = cont.execute(
+        "SELECT * FROM grade WHERE course_id = ? AND stu_num = ?",
+        (req.course_id, req.stu_num)
+    ).fetchone()
+    cont.close()
+    if row:
+        raise HTTPException(status_code=400, detail="Bad Request, Can not drop out graded classes")
+
     try:
         cur = conn.execute(
             "DELETE FROM class_stu WHERE course_id = ? AND stu_num = ?",

@@ -2,7 +2,7 @@
   <article class="message-row" :class="message.role">
     <div class="message-bubble" :class="[message.role, message.type]">
       <div class="message-meta">
-        <span>{{ message.role === 'user' ? '我' : 'CampusFlow' }}</span>
+        <span>{{ message.role === 'user' ? '我' : 'SchAgent' }}</span>
         <time>{{ message.createdAt }}</time>
       </div>
 

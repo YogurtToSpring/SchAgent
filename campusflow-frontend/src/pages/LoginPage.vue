@@ -3,7 +3,7 @@
     <section class="login-hero">
       <div class="brand-mark large">CF</div>
       <h1>CampusFlow 校园智能服务平台</h1>
-      <p>统一管理课程、待办、成绩、图书馆、论坛、文件和智能助手。</p>
+      <p>统一管理课程、待办、成绩、图书馆、论坛、文件和 SchAgent Agent。</p>
     </section>
 
     <section class="login-panel" aria-label="登录面板">
@@ -28,22 +28,21 @@
         </label>
         <label v-if="mode === 'register'">
           姓名
-          <input v-model="name" autocomplete="name" placeholder="请输入真实姓名" />
+          <input v-model="name" autocomplete="name" />
         </label>
         <label>
           账号
-          <input v-model="username" autocomplete="username" placeholder="学号 / 教师编号 / 管理员编号" />
+          <input v-model="username" autocomplete="username" />
         </label>
         <label v-if="mode === 'register' && role === 'student'">
           班级
-          <input v-model="className" placeholder="例如 弘毅班" />
+          <input v-model="className" />
         </label>
         <label>
           密码
           <input
             v-model="password"
             autocomplete="current-password"
-            placeholder="123456"
             type="password"
           />
         </label>

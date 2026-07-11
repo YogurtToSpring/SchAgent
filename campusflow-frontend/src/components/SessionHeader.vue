@@ -1,10 +1,10 @@
 <template>
   <header class="session-header">
     <div class="brand">
-      <div class="brand-mark">CF</div>
+      <div class="brand-mark">SA</div>
       <div>
-        <h1>CampusFlow</h1>
-        <p>校园学习生活调度智能体</p>
+        <h1>SchAgent</h1>
+        <p>校园学习生活调度 Agent</p>
       </div>
     </div>
 

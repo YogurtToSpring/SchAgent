@@ -9,3 +9,5 @@ workspace/
 *.xlsx
 *.csv
 *.zip
+*.md
+*.txt

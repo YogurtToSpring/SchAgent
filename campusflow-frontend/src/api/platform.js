@@ -229,6 +229,92 @@ export async function enrollStudent(courseId, studentNo) {
   return data
 }
 
+export async function dropStudentCourse(courseId, studentNo) {
+  const { data } = await platformClient.delete('/api/class-stu/enroll', {
+    data: {
+      course_id: String(courseId),
+      stu_num: String(studentNo)
+    }
+  })
+  return data
+}
+
+export async function loadStudentCourseSelection(studentNo) {
+  const account = String(studentNo || '').trim()
+  if (!account) return { courses: [], selectedCourseIds: [] }
+
+  const [coursesRes, selectedRes, teachersRes] = await Promise.all([
+    platformClient.get('/api/course'),
+    platformClient.get(`/api/class-stu/student/${encodeURIComponent(account)}/details`),
+    safeGet('/api/teacher', { teacher: [] })
+  ])
+
+  const teachers = normalizeTeachers(teachersRes.data?.teacher || [])
+  const teacherByNo = new Map(teachers.map(teacher => [teacher.teacherNo, teacher]))
+  const courseRows = coursesRes.data?.Courses || coursesRes.data?.courses || []
+  const selectedRows = selectedRes.data?.courses || []
+
+  return {
+    courses: courseRows.map(row => normalizeCatalogCourse(row, teacherByNo)),
+    selectedCourseIds: selectedRows.map(row => String(row.course_id || row.id || ''))
+  }
+}
+
+export async function loadLibraryAvailability({ date, startTime, endTime, area }) {
+  const { data } = await platformClient.get('/api/library/seats/available', {
+    params: {
+      date,
+      start_time: startTime,
+      end_time: endTime,
+      ...(area ? { area } : {})
+    }
+  })
+
+  return {
+    date: data?.date || date,
+    startTime: data?.start_time || startTime,
+    endTime: data?.end_time || endTime,
+    availableCount: Number(data?.available_count || 0),
+    unavailableCount: Number(data?.unavailable_count || 0),
+    seats: [
+      ...(data?.available_seats || []).map(row => normalizeLibrarySeat(row, true)),
+      ...(data?.unavailable_seats || []).map(row => normalizeLibrarySeat(row, false))
+    ].sort((left, right) => left.seatId.localeCompare(right.seatId))
+  }
+}
+
+export async function loadLibraryReservations(userId) {
+  const account = String(userId || '').trim()
+  if (!account) return []
+  const { data } = await platformClient.get(`/api/library/user/${encodeURIComponent(account)}/history`, {
+    params: {
+      status: 'all',
+      limit: 100,
+      offset: 0
+    }
+  })
+  return (data?.reservations || []).map(normalizeLibraryReservation)
+}
+
+export async function reserveLibrarySeat(userId, reservation) {
+  const { data } = await platformClient.post('/api/library/reserve', {
+    user_id: String(userId),
+    seat_id: String(reservation.seatId),
+    date: reservation.date,
+    start_time: reservation.startTime,
+    end_time: reservation.endTime
+  })
+  return normalizeLibraryReservation(data?.reservation || {})
+}
+
+export async function cancelLibraryReservation(reservationId, userId) {
+  const { data } = await platformClient.post('/api/library/cancel', {
+    reservation_id: Number(reservationId),
+    user_id: String(userId)
+  })
+  return normalizeLibraryReservation(data?.reservation || {})
+}
+
 export async function createTodoItem(userId, todo) {
   const { data } = await platformClient.post('/api/todo/add', {
     user_id: String(userId),
@@ -320,7 +406,7 @@ export async function saveGradeRecord(grade) {
     return data
   } catch (error) {
     const detail = String(error?.response?.data?.detail || '')
-    if (error?.response?.status === 400 && detail.includes('already exist')) {
+    if (error?.response?.status === 400 && (detail.includes('already exist') || detail.includes('Duplicate'))) {
       const { data } = await platformClient.patch('/api/grade/modify', payload)
       await refreshGpaCache().catch(() => null)
       return data
@@ -493,6 +579,7 @@ function normalizeCourses(rows, enrollments, students, teachers) {
   const studentByNo = new Map(students.map(student => [student.studentNo, student]))
   const teacherByNo = new Map(teachers.map(teacher => [teacher.teacherNo, teacher]))
   const classIdsByCourse = new Map()
+  const studentNosByCourse = new Map()
 
   for (const enrollment of enrollments) {
     const student = studentByNo.get(enrollment.studentNo)
@@ -501,6 +588,10 @@ function normalizeCourses(rows, enrollments, students, teachers) {
       classIdsByCourse.set(enrollment.courseId, new Set())
     }
     classIdsByCourse.get(enrollment.courseId).add(student.classId)
+    if (!studentNosByCourse.has(enrollment.courseId)) {
+      studentNosByCourse.set(enrollment.courseId, new Set())
+    }
+    studentNosByCourse.get(enrollment.courseId).add(enrollment.studentNo)
   }
 
   return rows.flatMap(row => {
@@ -527,9 +618,87 @@ function normalizeCourses(rows, enrollments, students, teachers) {
       weeks: `${row.week_start || 1}-${row.week_end || 16}周`,
       semester: row.semester || '',
       credit: Number(row.credit || 0),
+      studentNos: [...(studentNosByCourse.get(backendCourseId) || [])].filter(studentNo => {
+        return studentByNo.get(studentNo)?.classId === classId
+      }),
       raw: row
     }))
   })
+}
+
+function normalizeCatalogCourse(row, teacherByNo = new Map()) {
+  const courseId = String(row.course_id || row.id || '')
+  const teacherNo = String(row.teacher_num || row.teacherNo || '')
+  const teacher = teacherByNo.get(teacherNo)
+  return {
+    id: courseId,
+    courseId,
+    courseName: row.course_name || '未命名课程',
+    teacherNo,
+    teacher: teacher?.name || row.teacher_name || teacherNo || '待定',
+    weekday: weekdayLabels[Number(row.day)] || `周${row.day || '?'}`,
+    day: Number(row.day || 0),
+    startTime: row.start_time || '',
+    endTime: row.end_time || '',
+    location: row.room_id || '待定',
+    weekStart: Number(row.week_start || 1),
+    weekEnd: Number(row.week_end || 16),
+    weeks: `${row.week_start || 1}-${row.week_end || 16}周`,
+    semester: row.semester || '',
+    credit: Number(row.credit || 0),
+    raw: row
+  }
+}
+
+function normalizeLibrarySeat(row = {}, isAvailable = null) {
+  const available = isAvailable == null ? row.available !== false && row.status !== 'reserved' : isAvailable
+  return {
+    id: String(row.seat_id || row.id || ''),
+    seatId: String(row.seat_id || row.id || ''),
+    area: row.area || '',
+    floor: Number(row.floor || 0),
+    description: row.description || '',
+    available,
+    status: available ? 'available' : 'reserved',
+    raw: row
+  }
+}
+
+function normalizeLibraryReservation(row = {}) {
+  const backendStatus = row.status || 'reserved'
+  const hasUsageRecord = Boolean(row.used_at || row.checked_in_at || row.check_in_at)
+  let status = backendStatus
+  if (backendStatus === 'completed' && !hasUsageRecord) status = 'expired'
+  if (backendStatus === 'reserved' && isReservationTimePast(row)) status = 'expired'
+  const seatId = String(row.seat_id || '')
+  const date = row.date || ''
+  const startTime = row.start_time || ''
+  const endTime = row.end_time || ''
+  return {
+    id: row.id,
+    backendId: row.id,
+    userId: String(row.user_id || ''),
+    seatId,
+    date,
+    startTime,
+    endTime,
+    status,
+    backendStatus,
+    type: '座位',
+    target: `图书馆 ${seatId}`,
+    time: `${date} ${startTime}-${endTime}`,
+    createdAt: row.created_at || '',
+    cancelledAt: row.cancelled_at || '',
+    raw: row
+  }
+}
+
+function isReservationTimePast(row = {}) {
+  const date = String(row.date || '')
+  const endTime = String(row.end_time || '')
+  if (!date || !endTime) return false
+  const endAt = new Date(`${date}T${endTime}:00`)
+  return !Number.isNaN(endAt.getTime()) && endAt.getTime() < Date.now()
 }
 
 function normalizeTodos(rows) {
@@ -557,23 +726,26 @@ function normalizeTodo(row = {}) {
 }
 
 function normalizeStudentGrades(rows, payload = {}) {
-  return rows.map(row => ({
-    id: row.id || `${row.course_id}-${payload.stu_num}-${row.semester}`,
-    backendId: row.id,
-    studentNo: payload.stu_num,
-    studentName: payload.name,
-    classId: payload.cls,
-    courseId: String(row.course_id || ''),
-    courseName: row.course_name || String(row.course_id || ''),
-    credit: Number(row.credit || 0),
-    score: Number(row.score || 0),
-    gradePoint: Number(row.grade_point || 0),
-    gradeLetter: row.grade_letter || '',
-    semester: row.semester || '',
-    examType: row.exam_type || '',
-    remark: row.remark || '',
-    raw: row
-  }))
+  return rows.map(row => {
+    const scores = normalizeGradeScores(row)
+    return {
+      id: row.id || `${row.course_id}-${payload.stu_num}-${row.semester}`,
+      backendId: row.id,
+      studentNo: payload.stu_num,
+      studentName: payload.name,
+      classId: payload.cls,
+      courseId: String(row.course_id || ''),
+      courseName: row.course_name || String(row.course_id || ''),
+      credit: Number(row.credit || 0),
+      ...scores,
+      gradePoint: Number(row.grade_point || 0),
+      gradeLetter: row.grade_letter || '',
+      semester: row.semester || '',
+      examType: row.exam_type || '',
+      remark: row.remark || '',
+      raw: row
+    }
+  })
 }
 
 function normalizeTeacherGrades(courses, context = {}) {
@@ -598,6 +770,7 @@ function normalizeGradeRow(row, context = {}) {
   const studentNo = String(row.stu_num || row.studentNo || '')
   const course = (context.courses || []).find(item => item.backendCourseId === courseId || item.courseId === courseId)
   const student = (context.students || []).find(item => item.studentNo === studentNo)
+  const scores = normalizeGradeScores(row)
 
   return {
     id: row.id || `${courseId}-${studentNo}-${row.semester || ''}`,
@@ -608,7 +781,7 @@ function normalizeGradeRow(row, context = {}) {
     courseId,
     courseName: row.course_name || course?.courseName || courseId,
     credit: Number(row.credit ?? course?.credit ?? 0),
-    score: Number(row.score || 0),
+    ...scores,
     gradePoint: Number(row.grade_point || 0),
     gradeLetter: row.grade_letter || '',
     semester: row.semester || course?.semester || '',
@@ -629,14 +802,61 @@ function normalizeGpaSummary(data = {}) {
 }
 
 function toBackendGrade(grade) {
+  const fallbackScore = readNumber(grade.score ?? grade.final_score ?? grade.finalScore, 0)
+  const regularScore = readNumber(
+    grade.regularScore ?? grade.regular_score ?? grade.usual ?? grade.usualScore,
+    fallbackScore
+  )
+  const finalExamScore = readNumber(
+    grade.finalExamScore ?? grade.final_exam_score ?? grade.final ?? grade.finalExam,
+    fallbackScore
+  )
+
   return {
     course_id: String(grade.courseId || grade.course_id || ''),
     stu_num: String(grade.studentNo || grade.stu_num || ''),
-    score: Number(grade.score || 0),
+    regular_score: regularScore,
+    final_exam_score: finalExamScore,
     semester: grade.semester || '2025-2026-2',
     exam_type: grade.examType || grade.exam_type || '期末考试',
     remark: grade.remark || ''
   }
+}
+
+function normalizeGradeScores(row = {}) {
+  const regularScore = readOptionalNumber(row.regular_score ?? row.regularScore ?? row.usual ?? row.usualScore)
+  const finalExamScore = readOptionalNumber(row.final_exam_score ?? row.finalExamScore ?? row.final ?? row.finalExam)
+  const score = readNumber(
+    row.score ?? row.total_score ?? row.totalScore ?? row.final_score ?? row.finalScore,
+    calculateWeightedScore(regularScore, finalExamScore)
+  )
+
+  return {
+    regularScore,
+    finalExamScore,
+    score,
+    usual: regularScore,
+    final: finalExamScore,
+    finalScore: score
+  }
+}
+
+function calculateWeightedScore(regularScore, finalExamScore) {
+  if (regularScore == null && finalExamScore == null) return 0
+  if (regularScore == null) return Number(finalExamScore || 0)
+  if (finalExamScore == null) return Number(regularScore || 0)
+  return Math.round((Number(regularScore) * 0.4 + Number(finalExamScore) * 0.6) * 10) / 10
+}
+
+function readOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function readNumber(value, fallback = 0) {
+  const number = readOptionalNumber(value)
+  return number == null ? fallback : number
 }
 
 function getBackendUserId(user = {}) {

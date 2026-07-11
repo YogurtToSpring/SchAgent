@@ -11,11 +11,11 @@
     </section>
 
     <form v-if="posting" class="content-panel post-form" @submit.prevent="submitPost">
-      <select v-model="draft.channel">
+      <label class="form-field"><span>板块</span><select v-model="draft.channel">
         <option v-for="channel in channels" :key="channel">{{ channel }}</option>
-      </select>
-      <input v-model="draft.title" placeholder="标题" />
-      <textarea v-model="draft.summary" rows="3" placeholder="正文摘要"></textarea>
+      </select></label>
+      <label class="form-field"><span>标题</span><input v-model="draft.title" /></label>
+      <label class="form-field post-content-field"><span>内容</span><textarea v-model="draft.summary" rows="3"></textarea></label>
       <button class="primary-action compact" type="submit">发布</button>
     </form>
 

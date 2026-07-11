@@ -24,10 +24,10 @@
       </div>
 
       <div class="filter-bar">
-        <input v-model="filters.keyword" placeholder="搜索课程、教师、地点、课程号" />
-        <input v-model="filters.classKeyword" placeholder="搜索班级号或班级名" />
-        <input v-model="filters.semester" placeholder="搜索学期" />
-        <input v-model="filters.weekday" placeholder="搜索星期" />
+        <label class="filter-field"><span>课程搜索</span><input v-model="filters.keyword" /></label>
+        <label class="filter-field"><span>班级</span><input v-model="filters.classKeyword" /></label>
+        <label class="filter-field"><span>学期</span><input v-model="filters.semester" /></label>
+        <label class="filter-field"><span>星期</span><input v-model="filters.weekday" /></label>
       </div>
 
       <div class="data-table-wrap">
@@ -120,7 +120,11 @@ const roleCourses = computed(() => {
   if (props.currentUser.role === 'teacher') {
     return props.courses.filter(course => isTeacherCourse(course))
   }
-  return props.courses.filter(course => course.classId === props.currentUser.classId)
+  const studentNo = props.currentUser.studentNo || props.currentUser.username
+  return props.courses.filter(course => {
+    if (Array.isArray(course.studentNos)) return course.studentNos.includes(studentNo)
+    return course.classId === props.currentUser.classId
+  })
 })
 
 const filteredCourses = computed(() => {
