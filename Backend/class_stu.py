@@ -126,7 +126,7 @@ def drop_course(req: DeleteEnrollRequest):
     row = cont.execute(
         "SELECT * FROM grade WHERE course_id = ? AND stu_num = ?",
         (req.course_id, req.stu_num)
-    )
+    ).fetchone()
     cont.close()
     if row:
         raise HTTPException(status_code=400, detail="Bad Request, Can not drop out graded classes")

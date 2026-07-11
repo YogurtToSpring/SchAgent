@@ -721,3 +721,4 @@ function formatLocalDate(date) {
   return `${year}-${month}-${day}`
 }
 </script>
+
