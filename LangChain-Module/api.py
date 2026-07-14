@@ -1,24 +1,3 @@
-"""
-SchAgent FastAPI 接口层
-=======================
-向外提供 REST API，供 Backend 或其他服务调用。
-
-启动方式：
-    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
-
-接口列表：
-    GET  /health              → 健康检查
-    POST /chat                → 发送消息，获取 Agent 回复（同步）
-    POST /chat/stream         → 发送消息，SSE 流式获取 Agent 状态
-    GET  /history/{session_id} → 获取会话对话历史
-    DELETE /history/{session_id} → 清除会话历史
-    GET  /memory/{username}    → 获取用户长期记忆
-    PUT  /memory/{username}    → 更新用户长期记忆
-    DELETE /memory/{username}  → 删除用户长期记忆
-    GET  /files/{file_name}    → 下载工作区文件（Agent 生成的 PDF 等）
-    GET  /files                → 列出工作区可下载文件
-"""
-
 import json
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
@@ -26,7 +5,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import uvicorn
 
-# 从同目录的 main 模块导入核心函数
 from main import (
     chat as agent_chat,
     chat_stream,
@@ -40,14 +18,9 @@ from main import (
 
 app = FastAPI(
     title="SchAgent API",
-    description="校园生活智能助手 API - 基于 LangGraph + DeepSeek",
+    description="校园生活智能助手 API",
     version="2.0.0",
 )
-
-
-# ============================================================
-# 请求 / 响应模型
-# ============================================================
 
 class ChatRequest(BaseModel):
     session_id: str = Field(..., description="会话 ID，同一 ID 共享对话历史", examples=["user123-session1"])
@@ -83,10 +56,7 @@ class MemoryResponse(BaseModel):
     status: Optional[str] = None
 
 
-# ============================================================
 # API 端点
-# ============================================================
-
 @app.get("/health")
 async def health():
     """健康检查"""
@@ -95,12 +65,7 @@ async def health():
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """发送消息给 Agent，获取回复（同步模式）。
-    
-    同一 session_id 的多次请求会共享对话历史（LangGraph 自动管理）。
-    不同 session_id 之间完全隔离。
-    如需流式输出（思考过程、工具调用等），请使用 /chat/stream。
-    """
+    """同步模式"""
     try:
         reply = agent_chat(
             session_id=request.session_id,
@@ -118,15 +83,7 @@ async def chat(request: ChatRequest):
 
 @app.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
-    """流式对话端点（Server-Sent Events）。
-
-    将 Agent 的全生命周期状态（思考 token、工具调用/结果、回复 token）
-    以 SSE 格式实时推送给客户端。
-
-    事件类型：status | token | tool_call | tool_result | error | done
-
-    前端可使用 fetch + ReadableStream 消费（POST 不支持 EventSource）。
-    """
+    """流式对话"""
     async def event_generator():
         async for event_data in chat_stream(
             session_id=request.session_id,
@@ -190,9 +147,7 @@ async def delete_memory(username: str, key: Optional[str] = Query(None)):
     return MemoryResponse(**result)
 
 
-# ============================================================
 # 文件服务端点（供 Backend 下载 Agent 生成的文件）
-# ============================================================
 
 @app.get("/files")
 async def list_workspace_files(user_id: Optional[str] = Query(None, description="用户ID，用于隔离工作区文件")):
@@ -210,7 +165,6 @@ async def list_workspace_files(user_id: Optional[str] = Query(None, description=
                             "url": f"/files/{f.name}?user_id={user_id}",
                         })
         else:
-            # 向后兼容：无 user_id 时列出根目录文件
             for f in WORKSPACE_DIR.iterdir():
                 if f.is_file():
                     items.append({
@@ -225,11 +179,7 @@ async def list_workspace_files(user_id: Optional[str] = Query(None, description=
 
 @app.get("/files/{file_name}")
 async def download_file(file_name: str, user_id: Optional[str] = Query(None, description="用户ID，用于隔离工作区文件")):
-    """下载工作区中 Agent 生成的文件（如 PDF）。
-
-    由 markdown_to_pdf 等工具生成的文件存储在工作区目录，
-    通过此端点可以下载到前端。若提供 user_id 则从用户子目录读取。
-    """
+    """下载工作区中 Agent 生成的文件"""
     if user_id:
         file_path = (WORKSPACE_DIR / user_id / file_name).resolve()
     else:
@@ -248,10 +198,7 @@ async def download_file(file_name: str, user_id: Optional[str] = Query(None, des
     )
 
 
-# ============================================================
 # 启动入口
-# ============================================================
-
 
 if __name__ == "__main__":
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)

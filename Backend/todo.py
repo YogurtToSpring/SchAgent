@@ -1,13 +1,3 @@
-"""
-待办管理 (Todo Management) 数据库接口
-=====================================
-提供待办的增删改查及状态管理功能，向前端和 LangChain Agent 提供服务。
-
-数据表: todo (SQLite)
-接口前缀: /api
-
-启动方式: 由 main.py 自动加载注册
-"""
 from fastapi import FastAPI, HTTPException, APIRouter, Query
 from pydantic import BaseModel, Field
 import sqlite3
@@ -47,9 +37,6 @@ def init_db():
 
 init_db()
 
-
-# ==================== Pydantic 模型 ====================
-
 class TodoCreate(BaseModel):
     """创建待办请求体"""
     user_id: str = Field(..., description="用户ID（学号/工号）")
@@ -77,9 +64,6 @@ class BatchStatusUpdate(BaseModel):
     todo_ids: List[int] = Field(..., description="待办ID列表")
     status: str = Field(..., description="目标状态: pending / in_progress / completed")
 
-
-# ==================== 辅助函数 ====================
-
 def _validate_date(date_str: str) -> bool:
     """校验日期格式 YYYY-MM-DD"""
     try:
@@ -102,9 +86,6 @@ def _validate_priority(priority: str) -> bool:
 def _row_to_dict(row: sqlite3.Row) -> dict:
     """将 sqlite3.Row 转为字典"""
     return dict(row)
-
-
-# ==================== 待办接口 ====================
 
 @router.post("/todo/add")
 def add_todo(todo_data: TodoCreate):
@@ -403,9 +384,6 @@ def list_all_todos(
         "limit": limit,
         "offset": offset
     }
-
-
-# ==================== 批量操作接口（供 LangChain Agent 使用） ====================
 
 @router.post("/todo/batch/status")
 def batch_update_status(data: BatchStatusUpdate):

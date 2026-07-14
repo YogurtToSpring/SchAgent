@@ -1,15 +1,3 @@
-"""
-图书馆座位管理 (Library Seat Management) 数据库接口
-==================================================
-提供座位预约、取消预约、历史记录查询、座位状态查询等功能。
-
-数据表:
-    library_seat        — 座位列表（初始化时预置，不对外提供管理接口）
-    library_reservation — 预约记录（含预约和取消记录）
-
-接口前缀: /api
-启动方式: 由 main.py 自动加载注册
-"""
 from fastapi import FastAPI, HTTPException, APIRouter, Query
 from pydantic import BaseModel, Field
 import sqlite3
@@ -29,9 +17,6 @@ DATABASE = os.getenv("LIBRARY_DB", "library.db")
 # 图书馆开放时间
 LIBRARY_OPEN_TIME = "08:00"
 LIBRARY_CLOSE_TIME = "22:00"
-
-
-# ==================== 数据库初始化 ====================
 
 def init_db():
     """初始化图书馆数据库表并预置座位数据"""
@@ -97,7 +82,6 @@ def _seed_seats(conn: sqlite3.Connection):
 init_db()
 
 
-# ==================== Pydantic 模型 ====================
 
 class ReserveRequest(BaseModel):
     """预约座位请求"""
@@ -122,8 +106,6 @@ class SeatStatusOut(BaseModel):
     description: str
     status: str
 
-
-# ==================== 辅助函数 ====================
 
 def _validate_date(date_str: str) -> bool:
     """校验日期格式 YYYY-MM-DD"""
@@ -183,8 +165,6 @@ def _check_time_conflict(conn: sqlite3.Connection, seat_id: str, date: str,
             return True
     return False
 
-
-# ==================== 预约接口 ====================
 
 @router.post("/library/reserve")
 def reserve_seat(req: ReserveRequest):
@@ -298,8 +278,6 @@ def reserve_seat(req: ReserveRequest):
     }
 
 
-# ==================== 取消预约接口 ====================
-
 @router.post("/library/cancel")
 def cancel_reservation(req: CancelRequest):
     """
@@ -366,8 +344,6 @@ def cancel_reservation(req: CancelRequest):
         "reservation": _row_to_dict(updated),
     }
 
-
-# ==================== 历史记录查询 ====================
 
 @router.get("/library/user/{user_id}/history")
 def get_user_history(
@@ -447,9 +423,6 @@ def get_reservation_detail(reservation_id: int):
         raise HTTPException(status_code=404, detail=f"预约记录 {reservation_id} 不存在")
 
     return {"reservation": _row_to_dict(row)}
-
-
-# ==================== 座位状态查询 ====================
 
 @router.get("/library/seats/status")
 def get_seats_status(
@@ -587,9 +560,6 @@ def get_available_seats(
         "unavailable_seats": unavailable,
         "unavailable_count": len(unavailable),
     }
-
-
-# ==================== 管理员补充接口（自动完成过期预约） ====================
 
 @router.post("/library/refresh")
 def refresh_completed_reservations():
