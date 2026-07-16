@@ -19,7 +19,6 @@ LIBRARY_OPEN_TIME = "08:00"
 LIBRARY_CLOSE_TIME = "22:00"
 
 def init_db():
-    """初始化图书馆数据库表并预置座位数据"""
     conn = sqlite3.connect(DATABASE)
     conn.execute("PRAGMA foreign_keys = ON")
 
@@ -150,10 +149,6 @@ def _check_time_conflict(conn: sqlite3.Connection, seat_id: str, date: str,
             return True
     return False
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 088fcf9b914d75bb5cd6513ce43105422667c1ad
 @router.post("/library/reserve")
 def reserve_seat(req: ReserveRequest):
     if not _validate_date(req.date):
@@ -249,10 +244,6 @@ def reserve_seat(req: ReserveRequest):
         "reservation": _row_to_dict(row),
     }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 088fcf9b914d75bb5cd6513ce43105422667c1ad
 @router.post("/library/cancel")
 def cancel_reservation(req: CancelRequest):
     conn = sqlite3.connect(DATABASE)
@@ -310,10 +301,6 @@ def cancel_reservation(req: CancelRequest):
         "reservation": _row_to_dict(updated),
     }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 088fcf9b914d75bb5cd6513ce43105422667c1ad
 @router.get("/library/user/{user_id}/history")
 def get_user_history(
     user_id: str,
@@ -509,11 +496,6 @@ def get_available_seats(
 
 @router.post("/library/refresh")
 def refresh_completed_reservations():
-    """
-    刷新预约状态：将已过期的预约自动标记为 completed
-    ---
-    供前端定时调用或管理员手动触发。
-    """
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
     now_time = now.strftime("%H:%M")
