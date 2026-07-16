@@ -100,8 +100,6 @@ class SeatStatusOut(BaseModel):
     status: str
 
 
-# ==================== 辅助函数 ====================
-
 def _validate_date(date_str: str) -> bool:
     try:
         datetime.strptime(date_str, "%Y-%m-%d")
@@ -152,6 +150,10 @@ def _check_time_conflict(conn: sqlite3.Connection, seat_id: str, date: str,
             return True
     return False
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 088fcf9b914d75bb5cd6513ce43105422667c1ad
 @router.post("/library/reserve")
 def reserve_seat(req: ReserveRequest):
     if not _validate_date(req.date):
@@ -247,6 +249,10 @@ def reserve_seat(req: ReserveRequest):
         "reservation": _row_to_dict(row),
     }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 088fcf9b914d75bb5cd6513ce43105422667c1ad
 @router.post("/library/cancel")
 def cancel_reservation(req: CancelRequest):
     conn = sqlite3.connect(DATABASE)
@@ -304,6 +310,10 @@ def cancel_reservation(req: CancelRequest):
         "reservation": _row_to_dict(updated),
     }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 088fcf9b914d75bb5cd6513ce43105422667c1ad
 @router.get("/library/user/{user_id}/history")
 def get_user_history(
     user_id: str,
