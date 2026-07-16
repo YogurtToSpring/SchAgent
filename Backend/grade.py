@@ -1,12 +1,3 @@
-"""
-    grade.py - 成绩管理模块
-
-    负责学生成绩的录入、修改、删除、查询。
-    成绩由平时成绩(regular_score)和期末成绩(final_score)加权计算:
-        final_score = 0.4 * regular_score + 0.6 * final_exam_score
-    与 student.py 共用绩点换算函数，与 course.py 联查课程学分信息。
-"""
-
 from fastapi import FastAPI, HTTPException, APIRouter
 from pydantic import BaseModel
 import sqlite3
@@ -27,16 +18,8 @@ COURSE_DB = os.getenv("COURSE_DB_PATH", "course.db")
 TEACHER_DB = os.getenv("TEACHER_DB_PATH", "teacher.db")
 CLASS_STU_DB = os.getenv("CLASS_STU_DB_PATH", "class_stu.db")
 
-# ============================================================
-# 成绩计算: 40% 平时 + 60% 期末
-# ============================================================
-
 def compute_score(regular: float, final: float) -> float:
     return round(0.4 * regular + 0.6 * final, 1)
-
-# ============================================================
-# 数据库初始化
-# ============================================================
 
 def get_conn():
     conn = sqlite3.connect(DATABASE)
@@ -70,17 +53,12 @@ def init_db():
 
 init_db()
 
-# 添加索引（幂等）
 conn2 = sqlite3.connect(DATABASE)
 try:
     conn2.execute("CREATE INDEX IF NOT EXISTS idx_grade_lookup ON grade(course_id, stu_num, semester)")
 except sqlite3.OperationalError:
     pass
 conn2.close()
-
-# ============================================================
-# Pydantic 模型
-# ============================================================
 
 class AddGrade(BaseModel):
     course_id: str
@@ -106,12 +84,7 @@ class DeleteGrade(BaseModel):
     stu_num: str
     semester: str
 
-# ============================================================
-# 录入成绩
-# POST /api/grade/add
-# 请求体: { course_id, stu_num, regular_score, final_exam_score, semester, ... }
-# 权限: teacher / admin
-# ============================================================
+# 录入成绩，teacher/admin可调用
 @router.post("/grade/add")
 def add_score(data: AddGrade):
     conn = get_conn()
@@ -152,10 +125,7 @@ def add_score(data: AddGrade):
     }
 
 
-# ============================================================
-# 修改成绩
-# PATCH /api/grade/modify
-# ============================================================
+# 修改成绩，teacher可调用
 @router.patch("/grade/modify")
 def modify_score(data: ChangeGrade):
     conn = get_conn()
@@ -197,11 +167,7 @@ def modify_score(data: ChangeGrade):
     }
 
 
-# ============================================================
-# 删除成绩
-# DELETE /api/grade/delete
-# 请求体: { course_id, stu_num, semester }
-# ============================================================
+# 删除成绩，仅admin
 @router.delete("/grade/delete")
 def delete_grade(data: DeleteGrade):
     conn = get_conn()
@@ -221,10 +187,7 @@ def delete_grade(data: DeleteGrade):
     return {"message": f"Grade deleted: {data.course_id} / {data.stu_num} / {data.semester}"}
 
 
-# ============================================================
 # 查看全部成绩（admin）
-# GET /api/grade?semester=...
-# ============================================================
 @router.get("/grade")
 def list_all(semester: Optional[str] = None):
     conn = get_conn()
@@ -244,10 +207,7 @@ def list_all(semester: Optional[str] = None):
     return {"grades": result, "count": len(result)}
 
 
-# ============================================================
-# 学生查询个人成绩
-# GET /api/grade/student/{stu_num}?semester=...
-# ============================================================
+# 学生查询个人成绩，学生课调用
 @router.get("/grade/student/{stu_num}")
 def get_student_grades(stu_num: str, semester: Optional[str] = None):
     stu_con = sqlite3.connect(STUDENT_DB)
@@ -294,10 +254,7 @@ def get_student_grades(stu_num: str, semester: Optional[str] = None):
             "grades": result, "count": len(result), "semester": semester or "all"}
 
 
-# ============================================================
-# 按课程查询成绩
-# GET /api/grade/course/{course_id}
-# ============================================================
+# 按课程查询成绩，teacher/admin可调用
 @router.get("/grade/course/{course_id}")
 def get_course_grades(course_id: str):
     cor_con = sqlite3.connect(COURSE_DB)
@@ -352,10 +309,7 @@ def get_course_grades(course_id: str):
     }
 
 
-# ============================================================
 # 教师查询所教课程成绩
-# GET /api/grade/teacher/{teacher_num}
-# ============================================================
 @router.get("/grade/teacher/{teacher_num}")
 def get_teacher_grades(teacher_num: str):
     t_con = sqlite3.connect(TEACHER_DB)

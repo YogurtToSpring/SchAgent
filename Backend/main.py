@@ -1,17 +1,3 @@
-"""
-SchAgent Backend 校园生活智能助手后端
-======================================
-架构:
-    Vue 前端 (A) -> Backend (B - 本文件) -> HTTP -> LangChain API (C - api.py) -> Agent -> DeepSeek
-
-职责:
-    1. 接收前端 POST /api/chat 请求（含 user_context, platform_context）
-    2. 调用 C 的 POST /chat/stream (SSE) 获取 Agent 思考过程 + 工具调用 + 最终回复
-    3. 将流式事件编译为前端期望的 { status, answer, steps, tool_calls, artifacts } 格式
-
-启动方式:
-    uvicorn main:app --host 0.0.0.0 --port 8080 --reload
-"""
 import uuid
 import httpx
 import json
